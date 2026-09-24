@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-ASI (Argentina Seguridad Integral) is a prototype for a private security company's field-supervision app, built to the requirements of **PRD 1 — Panel de Supervisión** (rev. 22/04/2026). Three parts:
+ASISA (Argentina Seguridad Integral Sociedad Anónima) is a prototype for a private security company's field-supervision app, built to the requirements of **PRD 1 — Panel de Supervisión** (rev. 22/04/2026). Three parts:
 
-- `asi_prototype.html` — a single-file React 18 app (no build step; React, ReactDOM and Babel are loaded from CDN via `<script>` tags, styled with the Tailwind CDN build plus an inline claymorphism design system). Open it directly in a browser to run it.
+- `asi_prototype.html` — a single-file React 18 app (no build step; React, ReactDOM and Babel are loaded from CDN via `<script>` tags, styled with the Tailwind CDN build plus an inline ledger design system). Open it directly in a browser to run it.
 - `server.js` — an Express + PostgreSQL REST API (JWT auth + RBAC) that the prototype connects to at runtime.
 - `schema.sql` — idempotent schema + seed data. Re-runnable at any time with `psql asi -f schema.sql`.
 
@@ -33,7 +33,7 @@ Drive the app in a real browser (Chrome automation tools are available). Note th
 
 Everything lives in one `<script type="text/babel">` block, rendered into `#root` via `ReactDOM.createRoot`. File order: design tokens/CSS → seed data → `Icon` + clay primitives → `AppContext` → login/shell → supervisor steps → admin/owner panels → root.
 
-- **Design system: claymorphism** (blue/sky/white). Defined once in the `<style>` block and the inline `tailwind.config`. Surfaces use the `.clay`, `.clay-sm`, `.clay-inset` and `.clay-btn` classes (double shadows: a colored outer shadow plus a white inner highlight); buttons "sink" on `:active`. Semantic tones are `good`/`warn`/`bad` for the Likert scale B/R/M. **Never use emojis as icons** — all iconography goes through the `Icon` component, which renders lucide-style SVG paths from the `ICON_PATHS` map. Add new icons there rather than inlining `<svg>`.
+- **Design system: the `libro de novedades`** (navy buckram cover, cool ruled paper, vermilion margin rule, violet stamp, gold foil). Defined once in the `<style>` block and the inline `tailwind.config`; the durable rationale for every token lives in **`DESIGN.md`**, and the direction contract in **`.impeccable/surfaces/app.md`** — read both before touching the visual layer. **Border-radius is 0 everywhere**, enforced by a root rule; the `.clay*` class names are kept only so existing markup inherits the new world without a 2000-line rewrite. Surfaces are `.clay`/`.hoja` (sheet lifting off the bed), `.clay-inset`/`.casilla` (sunken field), `.lecho`/`.reglado` (the 28px ruled bed), `.tela` (cover), `.filete` (vermilion margin rule), `.sello` (the one authored motion — the stamp landing). Type is a single family, **Archivo** (Omnibus-Type, Buenos Aires), variable in weight and width; body floor is 17px and hierarchy comes from width/weight/tracking, never from color. Semantic tones are `good`/`warn`/`bad` for the Likert scale B/R/M, and each **must carry a mark (✓ △ ✕) as well as a tone** — nothing depends on color alone. Brand assets are inlined from `assets/asi-*.svg` via the `Isotipo` component. **Never use emojis as icons** — all iconography goes through the `Icon` component, which renders lucide-style SVG paths from the `ICON_PATHS` map. Add new icons there rather than inlining `<svg>`.
 - **`AppContext` / `AppProvider`** — the single source of truth: local mirror state (`rondasGuardadas`, `ticketsActivos`, `liveFeed`, `visitasPorObj`, KPIs via `useMemo`), the offline FIFO queue (`queue`/`offline`/`syncing`, with automatic 60s retry per PRD §10), the API layer (`apiFetch`, `conectarApi`, `cargarCatalogos`), and the catalogs (`objetivos`, `vigiladores`, `secciones`, `checklistDefs`, `observaciones`) which start as `SEED_*` and are replaced by `GET /api/inicializar` once authenticated. **Catalogs load on `apiToken` change, not on connect** — the endpoint requires auth.
 - **Role-based routing** — `AppInner` renders `LoginScreen`, `SupervisorPanel`, `AdminPanel` or `OwnerPanel` based on `currentUser.rol`. No router; a plain conditional inside `PhoneFrame`.
 - **Supervisor flow** — a 5-step wizard (`Step1`–`Step5`) plus the generated acta (`ActaGenerada`): objetivo + geocerca → multiple vigiladores → checklist → photo evidence → per-guard signatures. The wizard's working state is a single `rd` object (objetivo, tipo, respuestas keyed by item id, fotos, firmas keyed by vigilador id). `guardarRonda` builds the acta via `construirActa` (which derives each ticket's responsible area from the *selected observation's* area, falling back to the checklist item's) and either commits locally + POSTs to `/api/rondas`, or enqueues when offline.
@@ -56,3 +56,18 @@ Single-file Express API secured with JWT auth + RBAC, talking to PostgreSQL via 
 ## Language
 
 Code comments, log messages, and API response fields are in Spanish (Argentina) — match this convention when editing `server.js` or `asi_prototype.html`.
+
+## Design authority
+
+Visual work on `asi_prototype.html` runs through the **impeccable** skill, installed at the
+engagement root (`../.claude/skills/impeccable/`, with its agents in `../.claude/agents/`).
+Invoke it from `desktop-tutorial/`:
+
+```bash
+../.claude/skills/impeccable/scripts/impeccable context --target asi_prototype.html
+../.claude/skills/impeccable/scripts/impeccable detect --json asi_prototype.html
+```
+
+`PRODUCT.md` holds durable product truth, `DESIGN.md` the visual system, and
+`.impeccable/surfaces/app.md` the direction contract for this surface. Update them when the
+product or the world changes; do not let the code drift from them silently.
