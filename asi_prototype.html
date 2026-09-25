@@ -200,9 +200,7 @@ function useDeviceGeolocation() {
         setError(null);
       },
       (err) => {
-        // Se descarta la última posición conocida: si el GPS falla ahora, esas
-        // coordenadas ya no acreditan dónde está el supervisor y no pueden
-        // terminar firmando el acta como si fueran actuales.
+        // Una posición anterior no prueba la ubicación actual si se perdió la señal.
         setCoords(null);
         setError(err.code === 1 ? "denied" : err.code === 2 ? "unavailable" : "timeout");
       },
@@ -247,7 +245,7 @@ const SEED_VIGILADORES = [
     telefono:"11-3388-9921", domicilio:"Mitre 733, Campana", fecha_nacimiento:"1988-07-30", nacionalidad:"Argentina", convenio:"UPSRA", tiene_radio:false,
     objetivo_asignado:"Local Comercial Av. Corrientes" },
   { id:5, legajo:1276, nombre:"Marcelo Ariel Funes", dni:"27.845.112", puesto:"Vigilador Diurno A", estado:"activo",
-    credencial_numero:"FN-2210-A", credencial_venc:"2026-11-05", es_chofer:true,  licencia_cat:"B1", licencia_venc:"2027-05-18", armado:false,
+    credencial_numero:"FN-2210-A", credencial_venc:"2026-11-05", es_chofer:true, licencia_cat:"B1", licencia_venc:"2027-05-18", armado:false,
     telefono:"261-455-7823", domicilio:"Godoy Cruz 1450, Mendoza", fecha_nacimiento:"1990-06-14", nacionalidad:"Argentina", convenio:"UPSRA", tiene_radio:true,
     objetivo_asignado:"Barrio Demo Cercano" },
   { id:6, legajo:1319, nombre:"Yamila Soledad Paredes", dni:"34.117.890", puesto:"Vigiladora Nocturna B", estado:"activo",
@@ -1008,6 +1006,11 @@ function AppProvider({ children }) {
       porTipo[t].completadas += visitasPorObj[o.id] || 0;
       porTipo[t].total       += o.visitas_meta_mes || 0;
     }
+    const porObjetivo = objetivos.map(o => ({ ...o, realizadas: visitasPorObj[o.id] || 0 }));
+    const objetivosEnRiesgo = porObjetivo.filter(o =>
+      o.realizadas < (o.visitas_meta_mes || 0) * 0.8 &&
+      ticketsActivos.some(t => t.obj === o.nombre && t.estado === "Activo"));
+
     return {
       visitas:     hechas,
       metaVisitas: metaTotal || 1,
@@ -1015,7 +1018,9 @@ function AppProvider({ children }) {
       activas:     ticketsActivos.filter(t => t.estado === "Activo").length,
       cerradas:    ticketsActivos.filter(t => t.estado === "Cerrado").length,
       porTipo,
-      porObjetivo: objetivos.map(o => ({ ...o, realizadas: visitasPorObj[o.id] || 0 })),
+      porObjetivo,
+      objetivosEnRiesgo,
+      reincidencias: [],
     };
   }, [objetivos, visitasPorObj, ticketsActivos]);
 
@@ -1064,7 +1069,7 @@ function AppProvider({ children }) {
         tickets.push({
           id: `INC-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}-${String(n).padStart(4,"0")}`,
           obj: rd.objetivo?.nombre || "—", sup: supervisorNombre, val: "M", area: "RRHH", estado: "Activo",
-          desc: `Negativa a firmar el acta — ${v.nombre} (legajo ${v.legajo})`,
+          desc: `Negativa a firmar el acta — ${v.nombre} (legajo ${v.legajo}). Motivo: ${f.motivoNegativa || "no informado"}`,
           item: "Firma del acta", vig: v.nombre, fecha: stamp, isNew: true,
         });
       }
@@ -1096,7 +1101,6 @@ function AppProvider({ children }) {
     const body = {
       objetivo_id: objId,
       tipo: rd.tipo || "presencial",
-      // El servidor recalcula el geocerco con estos datos; no le mandamos nuestro veredicto
       lat: rd.deviceCoords?.lat ?? null, lng: rd.deviceCoords?.lng ?? null,
       precision_gps_m: rd.deviceCoords?.accuracy ?? null,
       justificacion_fuera: rd.justificacion || null,
@@ -1105,9 +1109,12 @@ function AppProvider({ children }) {
       hora_fin:    new Date().toISOString(),
       vigiladores: (rd.vigiladores || []).map(v => ({
         id: v.id,
-        firma_base64: rd.firmas?.[v.id]?.dataUrl || null,
-        nego_firmar:  Boolean(rd.firmas?.[v.id]?.nego),
+        firma_base64:    rd.firmas?.[v.id]?.dataUrl || null,
+        nego_firmar:     Boolean(rd.firmas?.[v.id]?.nego),
+        motivo_negativa: rd.firmas?.[v.id]?.motivoNegativa || null,
+        aviso_registrado: Boolean(rd.firmas?.[v.id]?.avisoRegistrado),
       })),
+      ausencias: (rd.ausencias || []).map(a => ({ vigilador_id: a.vigilador_id, motivo: a.motivo, nota: a.nota || null })),
       checklist: Object.entries(rd.respuestas || {}).map(([itemId, r]) => {
         const def = checklistDefs.find(d => String(d.id) === String(itemId)) || {};
         return {
@@ -1483,7 +1490,6 @@ function Step1({ rd, setRD, onNext }) {
   const [busca,setBusca]= useState("");
   const [tick, setTick] = useState(new Date());
   const obj = rd.objetivo;
-  const remotoRef = useRef(null);
 
   useEffect(() => { const t = setInterval(() => setTick(new Date()), 1000); return () => clearInterval(t); }, []);
 
@@ -1491,9 +1497,6 @@ function Step1({ rd, setRD, onNext }) {
   const distancia = (coords && obj?.lat != null) ? distanciaMetros(coords.lat, coords.lng, obj.lat, obj.lng) : null;
   const gps = gpsErr ? "error" : !coords ? "searching" : !obj ? "searching" : (distancia <= obj.radio_geocerca_m ? "inside" : "outside");
 
-  // Espeja el GPS en el acta. Si se pierde la señal, `coords` queda en null y hay que
-  // borrar también la posición del acta — un acta remota no puede viajar con las
-  // coordenadas de un fix anterior como si el dispositivo las hubiera confirmado.
   useEffect(() => {
     setRD(p => ({
       ...p,
@@ -1559,7 +1562,13 @@ function Step1({ rd, setRD, onNext }) {
           <Dot tone={GPS_UI.tone} pulse={gps === "searching"} />
           <span className={cx("text-xs font-bold",
             gps === "inside" ? "text-good-ink" : (gps === "outside" || gps === "error") ? "text-bad-ink" : "text-warn-ink")}>{GPS_UI.txt}</span>
+          {obj && distancia != null && <span className="text-[10px] text-ink-faint ml-auto tnum">{Math.round(distancia)} m · radio {obj.radio_geocerca_m} m</span>}
         </div>
+        {coords && (
+          <p className="text-[10px] text-ink-faint mt-2 font-mono tnum">
+            {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)} · precisión ±{Math.round(coords.accuracy)} m
+          </p>
+        )}
         {gps === "error" && (
           <button onClick={reintentar} className="clay-btn w-full mt-3 py-2.5 rounded-[14px] text-xs font-black flex items-center justify-center gap-1.5 bg-white text-ink-mute">
             <Icon name="refresh" size={14} /> Reintentar ubicación
@@ -1606,35 +1615,9 @@ function Step1({ rd, setRD, onNext }) {
                             {SUBTIPO_LABEL[o.subtipo] || o.tipo}{o.direccion ? ` · ${o.direccion}` : ""}
                           </p>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {/* Un solo botón fusiona el estado del geocerco con la acción de continuar —
-                              antes eran dos círculos chicos (estado + "seleccionado"), difíciles de tocar
-                              y que no se leían como accionables. Solo se revela al elegir el objetivo:
-                              mostrarlo en todas las tarjetas de entrada generaba alertas rojas sin sentido.
-                              Con muchos objetivos en la lista, tocarlo evita scrollear hasta el botón del
-                              fondo para arrancar la ronda. */}
-                          {sel && gps === "inside" && (
-                            <span role="button" tabIndex={0}
-                              onClick={e => { e.stopPropagation(); arrancar("presencial"); }}
-                              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); e.preventDefault(); arrancar("presencial"); } }}
-                              className="clay-press w-[46px] h-[46px] rounded-full flex items-center justify-center shrink-0 bg-good text-white shadow-md focus-ring"
-                              title="Iniciar checklist presencial" aria-label="Iniciar checklist presencial">
-                              <Icon name="check" size={20} strokeWidth={3} />
-                            </span>
-                          )}
-                          {sel && (gps === "outside" || gps === "error") && (
-                            <span role="button" tabIndex={0}
-                              onClick={e => { e.stopPropagation(); remotoRef.current?.scrollIntoView({ behavior:"smooth", block:"center" }); }}
-                              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); e.preventDefault(); remotoRef.current?.scrollIntoView({ behavior:"smooth", block:"center" }); } }}
-                              className="clay-press w-[46px] h-[46px] rounded-full flex items-center justify-center shrink-0 bg-bad text-white shadow-md focus-ring"
-                              title="Fuera del geocerco — ir a justificar supervisión remota" aria-label="Fuera del geocerco — ir a justificar supervisión remota">
-                              <Icon name="alert" size={20} strokeWidth={3} />
-                            </span>
-                          )}
-                          {sel && gps !== "inside" && gps !== "outside" && gps !== "error"
-                            ? <span className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shrink-0"><Icon name="check" size={14} strokeWidth={3} /></span>
-                            : !sel && <span className={cx("text-[10px] font-black tnum px-2 py-1 rounded-full shrink-0 min-w-[38px] text-center", cumple ? "bg-good-soft text-good-ink" : "bg-brand-50 text-brand-700")}>{hechas}/{meta}</span>}
-                        </div>
+                        {sel
+                          ? <span className="w-6 h-6 rounded-full bg-white/25 flex items-center justify-center shrink-0"><Icon name="check" size={14} strokeWidth={3} /></span>
+                          : <span className={cx("text-[10px] font-black tnum px-2 py-1 rounded-full shrink-0", cumple ? "bg-good-soft text-good-ink" : "bg-brand-50 text-brand-700")}>{hechas}/{meta}</span>}
                       </div>
                       {/* Cumplimiento mensual del objetivo (PRD §7) */}
                       <div className="mt-2.5">
@@ -1671,7 +1654,7 @@ function Step1({ rd, setRD, onNext }) {
       )}
 
       {(gps === "outside" || gps === "error") && (
-        <div ref={remotoRef} className="flex flex-col gap-3 a-up">
+        <div className="flex flex-col gap-3 a-up">
           <Clay className="p-4" tint="linear-gradient(135deg,#fff1f2,#ffe4e6)">
             <div className="flex items-start gap-2.5">
               <Icon name="alert" size={18} className="text-bad-ink mt-px" />
@@ -1837,42 +1820,40 @@ function PerfilVigilador({ v, historial = [], sanciones = [], incidencias = [] }
 /* ═══════════════════════════════════════════════════════════
    PASO 2 — Vigiladores a inspeccionar (múltiples · PRD §2.1)
 ═══════════════════════════════════════════════════════════ */
+const MOTIVO_AUSENCIA = {
+  franco:             "Franco",
+  licencia:           "Licencia",
+  relevo:             "Relevo",
+  ausente_sin_aviso:  "Ausente sin aviso",
+};
+
 function Step2({ rd, setRD, onNext, onBack }) {
   const { vigiladores, apiStatus, apiFetch } = useApp();
   const [legajo, setLegajo] = useState("");
   const [error,  setError]  = useState(null);
   const [busy,   setBusy]   = useState(false);
   const [perfil, setPerfil] = useState(null);
-  const [autoCargando, setAutoCargando] = useState(false);
-  const [autoCargados, setAutoCargados] = useState(false);
   const sel = rd.vigiladores || [];
+  const ausencias = rd.ausencias || [];
 
-  // Trae directo a los vigiladores asignados al objetivo elegido en el Paso 1 (vigiladores.objetivo_asignado_id)
-  // para no obligar a tipear cada legajo a mano — el legajo manual queda como refuerzo/reemplazo.
-  useEffect(() => {
-    if ((rd.vigiladores || []).length > 0 || !rd.objetivo) return;
-    const asignados = vigiladores.filter(v => v.objetivo_asignado === rd.objetivo.nombre && v.estado === "activo");
-    if (asignados.length === 0) return;
+  // Vigiladores esperados del objetivo que todavía no se marcaron presentes (2c)
+  const esperados = vigiladores.filter(v =>
+    v.objetivo_asignado === rd.objetivo?.nombre && !sel.some(s => s.id === v.id));
 
-    let cancelado = false;
-    (async () => {
-      setAutoCargando(true);
-      const enriquecidos = await Promise.all(asignados.map(async v => {
-        if (apiStatus !== "connected") return v;
-        try {
-          const res  = await apiFetch(`/api/vigilador/${v.legajo}`);
-          const data = await res.json();
-          if (data.ok) return { ...data.vigilador, _historial: data.historial, _sanciones: data.sanciones, _incidencias: data.incidencias };
-        } catch { /* cae al catálogo local */ }
-        return v;
-      }));
-      if (cancelado) return;
-      setRD(p => (p.vigiladores || []).length > 0 ? p : { ...p, vigiladores: enriquecidos });
-      setAutoCargados(true);
-      setAutoCargando(false);
-    })();
-    return () => { cancelado = true; };
-  }, []);
+  const setMotivoAusencia = (vigilador_id, motivo) => setRD(p => {
+    const resto = (p.ausencias || []).filter(a => a.vigilador_id !== vigilador_id);
+    return { ...p, ausencias: [...resto, { vigilador_id, motivo }] };
+  });
+
+  const marcarPresente = (v) => setRD(p => ({
+    ...p,
+    vigiladores: (p.vigiladores || []).some(actual => actual.id === v.id)
+      ? p.vigiladores
+      : [...(p.vigiladores || []), v],
+    ausencias: (p.ausencias || []).filter(a => a.vigilador_id !== v.id),
+  }));
+
+  const ausenciasIncompletas = esperados.filter(v => !ausencias.some(a => a.vigilador_id === v.id));
 
   const agregar = async () => {
     setError(null);
@@ -1912,16 +1893,7 @@ function Step2({ rd, setRD, onNext, onBack }) {
 
   return (
     <div className="flex flex-col gap-4 px-4 py-4 a-fade">
-      <SH title="Vigiladores" sub={autoCargados
-        ? `Estos son los vigiladores asignados a ${cortar(rd.objetivo?.nombre || "el objetivo", 26)}. Sumá o quitá si hace falta.`
-        : `Cargá el legajo de cada persona a inspeccionar en ${cortar(rd.objetivo?.nombre || "el objetivo", 26)}`} />
-
-      {autoCargando && (
-        <div className="bg-brand-50 rounded-[16px] px-4 py-3 flex items-center gap-2 a-up">
-          <Icon name="refresh" size={15} className="text-brand-600 a-spin" />
-          <p className="text-xs font-bold text-brand-700">Buscando vigiladores asignados a este objetivo…</p>
-        </div>
-      )}
+      <SH title="Vigiladores" sub={`Los asignados a ${cortar(rd.objetivo?.nombre || "el objetivo", 26)} se cargan automáticamente. Confirmá presencia o ausencia.`} />
 
       <Clay className="p-4">
         <Label className="mb-2">Número de legajo</Label>
@@ -1978,10 +1950,43 @@ function Step2({ rd, setRD, onNext, onBack }) {
         </div>
       )}
 
+      {esperados.length > 0 && (
+        <div className="flex flex-col gap-2.5">
+          <Label>{esperados.length} vigilador{esperados.length > 1 ? "es" : ""} del objetivo sin marcar presente</Label>
+          {esperados.map(v => {
+            const actual = ausencias.find(a => a.vigilador_id === v.id);
+            return (
+              <Clay key={v.id} className="p-3.5">
+                <div className="flex items-center gap-3 mb-2.5">
+                  <Avatar nombre={v.nombre} size={38} src={v.foto_url} tone="warn" />
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-black text-ink leading-tight truncate">{v.nombre}</p>
+                    <p className="text-[10px] text-ink-mute mt-0.5">Legajo {v.legajo} · ¿Por qué no está?</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button onClick={() => marcarPresente(v)}
+                    className="clay-btn col-span-2 py-2.5 rounded-[12px] text-[10px] font-black bg-good text-white">
+                    Está presente
+                  </button>
+                  {Object.entries(MOTIVO_AUSENCIA).map(([k, label]) => (
+                    <button key={k} onClick={() => setMotivoAusencia(v.id, k)}
+                      className={cx("clay-btn py-2 rounded-[12px] text-[10px] font-black transition-all",
+                        actual?.motivo === k ? "bg-warn text-white" : "bg-white text-ink-mute")}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </Clay>
+            );
+          })}
+        </div>
+      )}
+
       <div className="flex gap-2.5 mt-1">
         <Btn variant="white" icon="arrow-l" onClick={onBack} className="px-4">Atrás</Btn>
-        <Btn full size="lg" disabled={sel.length === 0} onClick={onNext} iconRight="arrow-r">
-          Continuar al checklist
+        <Btn full size="lg" disabled={sel.length === 0 || ausenciasIncompletas.length > 0} onClick={onNext} iconRight="arrow-r">
+          {ausenciasIncompletas.length > 0 ? "Indicá el motivo de cada ausencia" : "Continuar al checklist"}
         </Btn>
       </div>
 
@@ -2306,11 +2311,21 @@ function Step3({ rd, setRD, onNext, onBack }) {
 /* ═══════════════════════════════════════════════════════════
    PASO 4 — Evidencia fotográfica con marca de agua (PRD §8.5)
 ═══════════════════════════════════════════════════════════ */
+// Foto obligatoria según severidad configurada por ítem (foto_requerida_en: nunca|R|M) — Step3, 2d
+const FOTO_RANK   = { nunca: 99, R: 1, M: 2 };
+const ESTADO_RANK = { B: 0, R: 1, M: 2 };
+
 function Step4({ rd, setRD, onNext, onBack, supervisor }) {
+  const { checklistDefs } = useApp();
   const [cargando, setCargando] = useState(false);
   const [ver, setVer] = useState(null);
   const inputRef = useRef(null);
   const fotos = rd.fotos || [];
+
+  const requierenFoto = Object.entries(rd.respuestas || {})
+    .map(([id, r]) => ({ def: checklistDefs.find(d => String(d.id) === String(id)), r }))
+    .filter(({ def, r }) => def && ESTADO_RANK[r.estado] >= FOTO_RANK[def.foto_requerida_en || "M"]);
+  const faltaFoto = requierenFoto.length > 0 && fotos.length === 0;
 
   const tomar = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -2349,7 +2364,22 @@ function Step4({ rd, setRD, onNext, onBack, supervisor }) {
 
   return (
     <div className="flex flex-col gap-4 px-4 py-4 a-fade">
-      <SH title="Evidencia fotográfica" sub="Opcional · cada foto se sella con fecha, hora, GPS y supervisor" />
+      <SH title="Evidencia fotográfica"
+        sub={requierenFoto.length > 0 ? "Obligatoria para los ítems marcados abajo · se sella con fecha, hora, GPS y supervisor" : "Opcional · cada foto se sella con fecha, hora, GPS y supervisor"} />
+
+      {requierenFoto.length > 0 && (
+        <div className={cx("rounded-[16px] px-4 py-3 flex items-start gap-2", faltaFoto ? "bg-bad-soft" : "bg-good-soft")}>
+          <Icon name={faltaFoto ? "alert" : "check-circle"} size={15} className={cx("mt-px", faltaFoto ? "text-bad-ink" : "text-good-ink")} />
+          <div className="min-w-0">
+            <p className={cx("text-[11px] font-black leading-snug", faltaFoto ? "text-bad-ink" : "text-good-ink")}>
+              {faltaFoto ? "Estos ítems exigen foto de evidencia:" : "Evidencia obligatoria cargada"}
+            </p>
+            {faltaFoto && requierenFoto.map(({ def }) => (
+              <p key={def.id} className="text-[11px] text-bad-ink/80 font-semibold">· {def.titulo_corto}</p>
+            ))}
+          </div>
+        </div>
+      )}
 
       <input ref={inputRef} type="file" accept="image/*" capture="environment" multiple onChange={tomar} className="hidden" />
 
@@ -2392,8 +2422,8 @@ function Step4({ rd, setRD, onNext, onBack, supervisor }) {
 
       <div className="flex gap-2.5">
         <Btn variant="white" icon="arrow-l" onClick={onBack} className="px-4">Atrás</Btn>
-        <Btn full size="lg" onClick={onNext} iconRight="arrow-r">
-          {fotos.length ? "Continuar a firmas" : "Omitir y firmar"}
+        <Btn full size="lg" disabled={faltaFoto} onClick={onNext} iconRight="arrow-r">
+          {faltaFoto ? "Falta la foto obligatoria" : fotos.length ? "Continuar a firmas" : "Omitir y firmar"}
         </Btn>
       </div>
 
@@ -2479,8 +2509,19 @@ function Step5({ rd, setRD, onGuardar, onBack, guardando }) {
     const prev = p.firmas?.[id] || {};
     return { ...p, firmas: { ...(p.firmas || {}), [id]: { dataUrl: prev.nego ? prev.dataUrl : null, nego: !prev.nego } } };
   });
+  const setMotivoNegativa = (id, motivo) => setRD(p => ({
+    ...p, firmas: { ...(p.firmas || {}), [id]: { ...(p.firmas?.[id] || {}), motivoNegativa: motivo } },
+  }));
+  const setAvisoRegistrado = (id, valor) => setRD(p => ({
+    ...p, firmas: { ...(p.firmas || {}), [id]: { ...(p.firmas?.[id] || {}), avisoRegistrado: valor } },
+  }));
 
-  const firmados = vigs.filter(v => firmas[v.id]?.dataUrl || firmas[v.id]?.nego).length;
+  // Una negativa solo cuenta como resuelta cuando tiene motivo declarado y se avisó al vigilador (2g)
+  const negativaCompleta = (v) => {
+    const f = firmas[v.id];
+    return f?.nego && f.motivoNegativa?.trim().length >= 5 && f.avisoRegistrado;
+  };
+  const firmados = vigs.filter(v => firmas[v.id]?.dataUrl || negativaCompleta(v)).length;
   const puede    = firmados > 0 && firmados === vigs.length;
   const negativas= vigs.filter(v => firmas[v.id]?.nego);
 
@@ -2544,9 +2585,26 @@ function Step5({ rd, setRD, onGuardar, onBack, guardando }) {
             </div>
 
             {f.nego ? (
-              <div className="clay-inset py-9 flex flex-col items-center gap-2">
-                <Icon name="x-circle" size={30} className="text-bad" />
-                <p className="text-[12px] font-black text-bad-ink">Negativa a firmar registrada</p>
+              <div className="flex flex-col gap-3">
+                <div className="clay-inset py-7 flex flex-col items-center gap-2">
+                  <Icon name="x-circle" size={30} className="text-bad" />
+                  <p className="text-[12px] font-black text-bad-ink">Negativa a firmar registrada</p>
+                </div>
+                <Textarea label="Motivo declarado por el vigilador" value={f.motivoNegativa || ""}
+                  onChange={e => setMotivoNegativa(v.id, e.target.value)} rows={3}
+                  placeholder="Describí lo que el vigilador manifestó como motivo…"
+                  hint={<p className="text-[10px] text-ink-faint mt-1.5">Mínimo 5 caracteres.</p>} />
+                <label className="clay-press flex items-start gap-2.5 px-3.5 py-3 rounded-[15px] clay-sm cursor-pointer">
+                  <span className={cx("w-4.5 h-4.5 rounded-md flex items-center justify-center shrink-0 border-2 mt-px",
+                    f.avisoRegistrado ? "bg-brand-600 border-brand-600 text-white" : "border-slate-300")} style={{ width:18, height:18 }}>
+                    {f.avisoRegistrado && <Icon name="check" size={11} strokeWidth={3.5} />}
+                  </span>
+                  <input type="checkbox" className="hidden" checked={Boolean(f.avisoRegistrado)}
+                    onChange={e => setAvisoRegistrado(v.id, e.target.checked)} />
+                  <span className="text-[11px] font-semibold text-ink-soft leading-snug">
+                    Le expliqué que la negativa a firmar queda registrada en el acta.
+                  </span>
+                </label>
               </div>
             ) : (
               <CanvasFirma onChange={d => setFirma(v.id, d)} disabled={false} />
@@ -2880,9 +2938,39 @@ function SupervisorPanel() {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   PANEL ADMINISTRATIVO — gestión de incidencias
+   ADMIN — navegación entre secciones
 ═══════════════════════════════════════════════════════════ */
-function AdminPanel() {
+const ADMIN_SECCIONES = [
+  { key:"incidencias",   label:"Incidencias",   icon:"ticket" },
+  { key:"actas",         label:"Actas",         icon:"file" },
+  { key:"objetivos",     label:"Objetivos",     icon:"target" },
+  { key:"checklists",    label:"Checklists",    icon:"clipboard" },
+  { key:"vigiladores",   label:"Vigiladores",   icon:"users" },
+  { key:"planificacion", label:"Planificación", icon:"calendar" },
+];
+
+function SidebarNav({ seccion, onChange }) {
+  return (
+    <div className="shrink-0 md:w-52 md:shrink-0">
+      {/* Mobile: fila de chips con scroll horizontal. Desktop: columna fija. */}
+      <div className="flex md:flex-col gap-2 overflow-x-auto md:overflow-visible px-4 md:px-0 pb-2.5 md:pb-0">
+        {ADMIN_SECCIONES.map(s => (
+          <button key={s.key} onClick={() => onChange(s.key)}
+            className={cx("clay-btn shrink-0 md:w-full flex items-center gap-2 px-3.5 py-2.5 md:py-3 rounded-[15px] text-[11px] font-black transition-all",
+              seccion === s.key ? "bg-plum text-white" : "bg-white text-ink-mute")}>
+            <Icon name={s.icon} size={15} />
+            {s.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ADMIN — Incidencias (bandeja con SLA)
+═══════════════════════════════════════════════════════════ */
+function AdminIncidencias() {
   const { ticketsActivos, cerrarTicket, apiStatus, apiFetch, currentUser } = useApp();
   const [apiTickets, setApiTickets] = useState(null);
   const [cargando,   setCargando]   = useState(false);
@@ -2892,24 +2980,57 @@ function AdminPanel() {
   const [resol,      setResol]      = useState("");
   const [cerrando,   setCerrando]   = useState(false);
 
+  const [usuarios, setUsuarios] = useState([]);
+  const [asignando, setAsignando] = useState(false);
+
   const conApi  = apiStatus === "connected" && apiTickets !== null;
   const tickets = conApi ? apiTickets : ticketsActivos;
 
   useEffect(() => {
     if (apiStatus !== "connected") { setApiTickets(null); return; }
     setCargando(true);
-    apiFetch("/api/tickets?limite=100").then(r => r.json()).then(d => {
+    apiFetch("/api/tickets?limite=100&orden=urgencia").then(r => r.json()).then(d => {
       if (!d.ok) return;
       setApiTickets(d.tickets.map(t => ({
         id: t.codigo_ticket, _dbId: t.id, obj: t.objetivo, sup: t.supervisor,
         val: t.valoracion || "R", area: t.area_responsable, item: t.item_titulo,
         vig: t.vigilador, estado: t.estado === "ABIERTO" ? "Activo" : "Cerrado",
         desc: t.descripcion, resolucion: t.resolucion,
+        severidad: t.severidad, slaVencido: t.sla_vencido, slaVenceHoy: t.sla_vence_hoy,
+        asignadoA: t.asignado_a, asignadoNombre: t.asignado_nombre, reincidencias: t.reincidencias_90d,
         fecha: new Date(t.fecha_creacion).toLocaleString("es-AR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }),
         isNew: false,
       })));
     }).catch(e => console.warn("[tickets]", e.message)).finally(() => setCargando(false));
+
+    apiFetch("/api/usuarios?rol=admin").then(r => r.json()).then(d => { if (d.ok) setUsuarios(d.usuarios); }).catch(() => {});
   }, [apiStatus]);
+
+  const [rechazando,    setRechazando]    = useState(false);
+  const [motivoRechazo, setMotivoRechazo] = useState("");
+  const [procesando,    setProcesando]    = useState(false);
+
+  const asignar = async (a_usuario_id) => {
+    if (!actual?._dbId) return;
+    setAsignando(true);
+    const endpoint = actual.asignadoA ? "reasignar" : "asignar";
+    try {
+      await apiFetch(`/api/tickets/${actual._dbId}/${endpoint}`, { method:"PATCH", body: JSON.stringify({ a_usuario_id }) });
+      const u = usuarios.find(u => u.id === a_usuario_id);
+      setApiTickets(ts => ts.map(t => t.id === actual.id ? { ...t, asignadoA: a_usuario_id, asignadoNombre: u?.nombre } : t));
+    } catch (e) { console.warn("[asignar]", e.message); }
+    setAsignando(false);
+  };
+
+  const confirmarRechazo = async () => {
+    if (!actual?._dbId || motivoRechazo.trim().length < 10) return;
+    setProcesando(true);
+    try {
+      await apiFetch(`/api/tickets/${actual._dbId}/rechazar`, { method:"PATCH", body: JSON.stringify({ motivo: motivoRechazo }) });
+      setApiTickets(ts => ts.map(t => t.id === actual.id ? { ...t, estado:"Cerrado", resolucion: `Rechazada: ${motivoRechazo}` } : t));
+    } catch (e) { console.warn("[rechazar]", e.message); }
+    setProcesando(false); setRechazando(false); setMotivoRechazo(""); setSel(null);
+  };
 
   const stats = {
     crit: tickets.filter(t => t.val === "M" && t.estado === "Activo").length,
@@ -2943,11 +3064,7 @@ function AdminPanel() {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <PanelHeader icon="clipboard" rol="Gestión de incidencias" nombre={currentUser?.nombre || "Administración"} tone="plum" />
-      <ConnBar />
-      <SyncToast />
-
+    <>
       {/* Contadores */}
       <div className="flex gap-2 md:gap-3 px-4 md:px-6 pb-2.5 md:pb-4 shrink-0">
         {[["Críticas", stats.crit, "bad"], ["Activas", stats.act, "warn"], ["Cerradas", stats.cer, "good"]].map(([l, v, tone]) => (
@@ -3017,6 +3134,14 @@ function AdminPanel() {
                 <Badge tone={t.val === "M" ? "bad" : "warn"} className="ml-auto">{VALOR[t.val]?.label || t.val}</Badge>
               </div>
             )}
+            {t.estado === "Activo" && (t.slaVencido || t.slaVenceHoy || t.reincidencias > 0 || t.asignadoNombre) && (
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                {t.slaVencido    && <Badge tone="bad"  icon="clock">SLA vencido</Badge>}
+                {!t.slaVencido && t.slaVenceHoy && <Badge tone="warn" icon="clock">Vence hoy</Badge>}
+                {t.reincidencias > 0 && <Badge tone="plum" icon="refresh">Reincide ×{t.reincidencias}</Badge>}
+                {t.asignadoNombre ? <Badge tone="brand" icon="user">{t.asignadoNombre}</Badge> : <Badge tone="gray" icon="user">Sin asignar</Badge>}
+              </div>
+            )}
             <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
               <Badge tone={AREA_THEME[t.area]?.tone || "gray"}>{t.area}</Badge>
               <span className="text-[10px] text-ink-faint ml-auto">{t.sup} · {t.fecha}</span>
@@ -3049,13 +3174,53 @@ function AdminPanel() {
 
             {actual.estado === "Activo" ? (
               <>
-                <Textarea label="Resolución técnica" value={resol} onChange={e => setResol(e.target.value)} rows={4}
-                  placeholder="Describí la acción concreta que resolvió esta incidencia…"
-                  hint={<p className="text-[10px] text-ink-faint mt-1.5">Mínimo 5 caracteres.</p>} />
-                <Btn full size="lg" variant="success" icon="check-circle" loading={cerrando}
-                  disabled={resol.trim().length < 5} onClick={confirmarCierre}>
-                  Cerrar incidencia
-                </Btn>
+                {conApi && usuarios.length > 0 && (
+                  <Clay className="p-3.5">
+                    <Label className="mb-2">{actual.asignadoNombre ? "Reasignar a" : "Asignar a"}</Label>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {usuarios.map(u => (
+                        <button key={u.id} disabled={asignando} onClick={() => asignar(u.id)}
+                          className={cx("clay-btn px-3 py-2 rounded-full text-[10px] font-black transition-all",
+                            actual.asignadoA === u.id ? "bg-brand-600 text-white" : "bg-white text-ink-mute")}>
+                          {u.nombre} <span className="tnum opacity-70">({u.carga_actual})</span>
+                        </button>
+                      ))}
+                    </div>
+                    {actual.asignadoNombre && (
+                      <p className="text-[10px] text-ink-faint mt-2">El SLA no se reinicia al reasignar.</p>
+                    )}
+                  </Clay>
+                )}
+
+                {rechazando ? (
+                  <Clay className="p-3.5 flex flex-col gap-2.5">
+                    <Textarea label="Motivo del rechazo o duplicado" value={motivoRechazo}
+                      onChange={e => setMotivoRechazo(e.target.value)} rows={3}
+                      placeholder="Explicá por qué se rechaza o a qué incidencia duplica…"
+                      hint={<p className="text-[10px] text-ink-faint mt-1.5">Mínimo 10 caracteres. Se notifica al supervisor.</p>} />
+                    <div className="flex gap-2">
+                      <Btn variant="white" onClick={() => setRechazando(false)} className="px-4">Cancelar</Btn>
+                      <Btn full variant="danger" icon="x-circle" loading={procesando}
+                        disabled={motivoRechazo.trim().length < 10} onClick={confirmarRechazo}>
+                        Confirmar rechazo
+                      </Btn>
+                    </div>
+                  </Clay>
+                ) : (
+                  <>
+                    <Textarea label="Resolución técnica" value={resol} onChange={e => setResol(e.target.value)} rows={4}
+                      placeholder="Contá qué se hizo. Esto lo lee el cliente y el supervisor…"
+                      hint={<p className="text-[10px] text-ink-faint mt-1.5">Mínimo 30 caracteres.</p>} />
+                    <Btn full size="lg" variant="success" icon="check-circle" loading={cerrando}
+                      disabled={resol.trim().length < 30} onClick={confirmarCierre}>
+                      Resolver incidencia
+                    </Btn>
+                    <button onClick={() => setRechazando(true)}
+                      className="text-[11px] font-black text-bad-ink text-center py-1 focus-ring rounded">
+                      Rechazar o marcar como duplicada
+                    </button>
+                  </>
+                )}
               </>
             ) : (
               <div className="bg-good-soft rounded-[16px] px-4 py-3.5">
@@ -3069,6 +3234,39 @@ function AdminPanel() {
           </div>
         )}
       </Sheet>
+    </>
+  );
+}
+
+function AdminPanel() {
+  const { currentUser } = useApp();
+  const [seccion, setSeccion] = useState("incidencias");
+  const activa = ADMIN_SECCIONES.find(s => s.key === seccion);
+
+  return (
+    <div className="flex flex-col h-full">
+      <PanelHeader icon="clipboard" rol="Panel administrativo" nombre={currentUser?.nombre || "Administración"} tone="plum" />
+      <ConnBar />
+      <SyncToast />
+
+      <div className="flex-1 min-h-0 md:flex md:gap-4 md:px-6 md:pb-5">
+        <SidebarNav seccion={seccion} onChange={setSeccion} />
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+          {seccion === "incidencias" ? (
+            <AdminIncidencias />
+          ) : (
+            <div className="scroll-y flex-1 px-4 md:px-0 pb-5">
+              <Clay className="p-6 md:p-8 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-plum-soft text-plum mx-auto mb-3 flex items-center justify-center">
+                  <Icon name={activa?.icon || "clipboard"} size={23} />
+                </div>
+                <p className="text-[16px] font-black text-ink">{activa?.label}</p>
+                <p className="text-[12px] text-ink-mute mt-1.5">Esta sección todavía no tiene una interfaz administrativa disponible.</p>
+              </Clay>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -3102,6 +3300,8 @@ function OwnerPanel() {
         criticas:    k.tickets.criticos, activas: k.tickets.abiertos, cerradas: k.tickets.cerrados,
         porArea:     k.tickets.por_area, diasProm: k.tickets.dias_promedio_resolucion,
         rondas:      k.rondas, porTipo, porObjetivo,
+        objetivosEnRiesgo: k.objetivos_en_riesgo || [],
+        reincidencias:     k.reincidencias || [],
       });
     }).catch(e => console.warn("[kpis]", e.message));
 
@@ -3197,6 +3397,64 @@ function OwnerPanel() {
                   <p className="text-[13px] font-black text-ink tnum">{k.diasProm} días</p>
                   <p className="text-[10px] text-ink-mute">Tiempo promedio de resolución</p>
                 </div>
+              </Clay>
+            )}
+
+            {/* Objetivos en riesgo — incumplen frecuencia Y tienen incidencias abiertas (7a) */}
+            {(k.objetivosEnRiesgo || []).length > 0 && (
+              <Clay className="p-4" tint="linear-gradient(135deg,#fff7ed,#ffedd5)">
+                <div className="flex items-center gap-2 mb-2.5">
+                  <Icon name="alert" size={16} className="text-tang-ink" />
+                  <p className="text-[12px] font-black text-tang-ink">
+                    {k.objetivosEnRiesgo.length} objetivo{k.objetivosEnRiesgo.length > 1 ? "s" : ""} en riesgo
+                  </p>
+                </div>
+                <p className="text-[10px] text-ink-faint mb-2.5">Incumplen frecuencia y tienen incidencias abiertas.</p>
+                <div className="flex flex-col gap-1.5">
+                  {k.objetivosEnRiesgo.slice(0, 5).map(o => (
+                    <div key={o.id || o.nombre} className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-ink-soft truncate">{o.nombre}</span>
+                      <span className="text-[10px] text-ink-faint tnum shrink-0">
+                        {o.rondas_realizadas ?? o.realizadas}/{o.visitas_meta_mes}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </Clay>
+            )}
+
+            {/* Reincidencia — mismo ítem, mismo objetivo, últimos 90 días */}
+            {(k.reincidencias || []).length > 0 && (
+              <Clay className="p-4">
+                <div className="flex items-center gap-2 mb-2.5">
+                  <Icon name="refresh" size={16} className="text-plum" />
+                  <p className="text-[12px] font-black text-ink">Se repite, no se resuelve</p>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {k.reincidencias.slice(0, 5).map((r, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-ink-soft truncate">{r.item_titulo} · {r.objetivo}</span>
+                      <Badge tone="plum">×{r.repeticiones}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </Clay>
+            )}
+
+            {k.rondas?.mes_anterior != null && (
+              <Clay className="p-3.5 flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] font-bold text-ink-mute">vs. mes anterior</p>
+                  <p className="text-[10px] text-ink-faint">{k.rondas.mes_anterior} rondas el mes pasado</p>
+                </div>
+                {(() => {
+                  const delta = k.rondas.total_mes - k.rondas.mes_anterior;
+                  return (
+                    <Badge tone={delta >= 0 ? "good" : "bad"} icon={delta >= 0 ? "trending" : "alert"}>
+                      {delta >= 0 ? "+" : ""}{delta} rondas
+                    </Badge>
+                  );
+                })()}
               </Clay>
             )}
           </div>
