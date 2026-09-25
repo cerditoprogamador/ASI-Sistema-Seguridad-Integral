@@ -36,8 +36,35 @@ CREATE TABLE IF NOT EXISTS objetivos (
 ALTER TABLE objetivos ADD COLUMN IF NOT EXISTS subtipo TEXT DEFAULT 'barrio_unipersonal';
 ALTER TABLE objetivos ADD COLUMN IF NOT EXISTS modalidad TEXT DEFAULT 'unipersonal';
 
+/* Alta de objetivo en 4 pasos y gestión admin (t6 wireframe) */
+ALTER TABLE objetivos ADD COLUMN IF NOT EXISTS estado_config    TEXT NOT NULL DEFAULT 'activo';
+ALTER TABLE objetivos ADD COLUMN IF NOT EXISTS permite_remota   BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE objetivos ADD COLUMN IF NOT EXISTS cliente          TEXT;
+
+DO $$ BEGIN
+  ALTER TABLE objetivos ADD CONSTRAINT objetivos_estado_config_check
+    CHECK (estado_config IN ('activo','borrador','suspendido'));
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+END $$;
+
 DO $$ BEGIN
   ALTER TABLE objetivos ADD CONSTRAINT objetivos_nombre_key UNIQUE (nombre);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR unique_violation THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE objetivos ADD CONSTRAINT objetivos_tipo_check CHECK (tipo IN ('Barrios','Industrias','Locales'));
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE objetivos ADD CONSTRAINT objetivos_subtipo_check
+    CHECK (subtipo IN ('barrio_multipuesto','barrio_unipersonal','local_comercial','industria','empresa_oficinas'));
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE objetivos ADD CONSTRAINT objetivos_modalidad_check CHECK (modalidad IN ('unipersonal','multipuesto'));
 EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
 END $$;
 
@@ -68,6 +95,13 @@ ALTER TABLE vigiladores ADD COLUMN IF NOT EXISTS tiene_radio          BOOLEAN DE
 ALTER TABLE vigiladores ADD COLUMN IF NOT EXISTS objetivo_asignado_id INTEGER REFERENCES objetivos(id);
 ALTER TABLE vigiladores ADD COLUMN IF NOT EXISTS foto_url             TEXT;
 
+DO $$ BEGIN
+  ALTER TABLE vigiladores ADD CONSTRAINT vigiladores_estado_check CHECK (estado IN ('activo','suspendido'));
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_vigiladores_objetivo_asignado ON vigiladores(objetivo_asignado_id);
+
 /* ─────────────────────────────────────────────
    HISTORIAL Y SANCIONES DEL VIGILADOR
 ───────────────────────────────────────────── */
@@ -79,6 +113,13 @@ CREATE TABLE IF NOT EXISTS historial_vigiladores (
   fecha         TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+DO $$ BEGIN
+  ALTER TABLE historial_vigiladores ADD CONSTRAINT historial_vigiladores_tipo_check CHECK (tipo IN ('Acta','Sanción'));
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_historial_vigilador ON historial_vigiladores(vigilador_id);
+
 CREATE TABLE IF NOT EXISTS sanciones (
   id            SERIAL PRIMARY KEY,
   vigilador_id  INTEGER NOT NULL REFERENCES vigiladores(id),
@@ -86,6 +127,8 @@ CREATE TABLE IF NOT EXISTS sanciones (
   estado        TEXT NOT NULL DEFAULT 'activa' CHECK (estado IN ('activa','cumplida','apelada')),
   fecha         DATE NOT NULL DEFAULT CURRENT_DATE
 );
+
+CREATE INDEX IF NOT EXISTS idx_sanciones_vigilador ON sanciones(vigilador_id);
 
 /* ─────────────────────────────────────────────
    CHECKLIST CONFIGURABLE — PRD §3.3
@@ -112,8 +155,60 @@ CREATE TABLE IF NOT EXISTS checklist_items (
 
 DO $$ BEGIN
   ALTER TABLE checklist_items ADD CONSTRAINT checklist_items_titulo_key UNIQUE (titulo_corto);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR unique_violation THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_checklist_items_seccion ON checklist_items(seccion_id);
+
+/* Ítems del checklist — condición para exigir foto/observación y severidad (Step3, 2d) */
+ALTER TABLE checklist_items ADD COLUMN IF NOT EXISTS foto_requerida_en TEXT NOT NULL DEFAULT 'M';
+ALTER TABLE checklist_items ADD COLUMN IF NOT EXISTS auto_incidencia   BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE checklist_items ADD COLUMN IF NOT EXISTS version           INTEGER NOT NULL DEFAULT 1;
+
+DO $$ BEGIN
+  ALTER TABLE checklist_items
+    ADD CONSTRAINT checklist_items_foto_requerida_check CHECK (foto_requerida_en IN ('nunca','R','M'));
 EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
 END $$;
+
+/* Versionado de publicaciones del checklist — 6d: "versionar en vez de sobrescribir" */
+CREATE TABLE IF NOT EXISTS checklist_versiones (
+  id              SERIAL PRIMARY KEY,
+  numero          INTEGER NOT NULL UNIQUE,
+  notas_cambio    TEXT,
+  publicado_por   INTEGER REFERENCES usuarios(id),
+  publicado_en    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Snapshot de cada ítem tal como quedó en cada versión publicada — permite mostrarle
+-- a Administración el diff v7→v8 y a Gerencia el acta vieja con "su" versión, no la actual.
+CREATE TABLE IF NOT EXISTS checklist_items_historial (
+  id                SERIAL PRIMARY KEY,
+  item_id           INTEGER NOT NULL REFERENCES checklist_items(id) ON DELETE CASCADE,
+  version           INTEGER NOT NULL REFERENCES checklist_versiones(numero),
+  titulo_corto      TEXT NOT NULL,
+  criterio_completo TEXT NOT NULL,
+  area_responsable  TEXT NOT NULL,
+  tipos_objetivo    TEXT[] NOT NULL DEFAULT '{}',
+  activo            BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_checklist_historial_item ON checklist_items_historial(item_id);
+
+/* Planificación semanal — objetivo × día × supervisor/turno (6f) */
+CREATE TABLE IF NOT EXISTS planificacion_rondas (
+  id             SERIAL PRIMARY KEY,
+  objetivo_id    INTEGER NOT NULL REFERENCES objetivos(id) ON DELETE CASCADE,
+  supervisor_id  INTEGER REFERENCES usuarios(id),
+  fecha          DATE NOT NULL,
+  turno          TEXT NOT NULL DEFAULT 'dia' CHECK (turno IN ('dia','noche')),
+  estado         TEXT NOT NULL DEFAULT 'planificada' CHECK (estado IN ('planificada','cubierta','sin_cubrir')),
+  publicada      BOOLEAN NOT NULL DEFAULT FALSE,
+  UNIQUE (objetivo_id, fecha, turno)
+);
+
+CREATE INDEX IF NOT EXISTS idx_planificacion_fecha ON planificacion_rondas(fecha);
+CREATE INDEX IF NOT EXISTS idx_planificacion_supervisor ON planificacion_rondas(supervisor_id);
 
 /* ─────────────────────────────────────────────
    AJUSTES DEL CHECKLIST POR OBJETIVO
@@ -145,7 +240,7 @@ CREATE TABLE IF NOT EXISTS observaciones_catalogo (
 
 DO $$ BEGIN
   ALTER TABLE observaciones_catalogo ADD CONSTRAINT observaciones_texto_key UNIQUE (texto);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR unique_violation THEN NULL;
 END $$;
 
 /* ─────────────────────────────────────────────
@@ -167,6 +262,17 @@ CREATE TABLE IF NOT EXISTS rondas_actas (
 
 ALTER TABLE rondas_actas ADD COLUMN IF NOT EXISTS hora_inicio TIMESTAMP;
 ALTER TABLE rondas_actas ADD COLUMN IF NOT EXISTS hora_fin    TIMESTAMP;
+ALTER TABLE rondas_actas ADD COLUMN IF NOT EXISTS distancia_geocerca_m INTEGER;
+ALTER TABLE rondas_actas ADD COLUMN IF NOT EXISTS precision_gps_m      DOUBLE PRECISION;
+
+DO $$ BEGIN
+  ALTER TABLE rondas_actas ADD CONSTRAINT rondas_actas_codigo_key UNIQUE (codigo_acta);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR unique_violation THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_rondas_supervisor ON rondas_actas(supervisor_id);
+CREATE INDEX IF NOT EXISTS idx_rondas_objetivo   ON rondas_actas(objetivo_id);
+CREATE INDEX IF NOT EXISTS idx_rondas_fecha_hora  ON rondas_actas(fecha_hora);
 
 CREATE TABLE IF NOT EXISTS ronda_vigiladores (
   id            SERIAL PRIMARY KEY,
@@ -175,6 +281,20 @@ CREATE TABLE IF NOT EXISTS ronda_vigiladores (
   firma_base64  TEXT,
   nego_firmar   BOOLEAN DEFAULT FALSE
 );
+
+ALTER TABLE ronda_vigiladores ADD COLUMN IF NOT EXISTS motivo_negativa TEXT;
+ALTER TABLE ronda_vigiladores ADD COLUMN IF NOT EXISTS aviso_registrado BOOLEAN DEFAULT FALSE;
+
+/* Ausencias — vigiladores esperados del objetivo que no se marcaron presentes (Step2, 2c) */
+CREATE TABLE IF NOT EXISTS ronda_ausencias (
+  id            SERIAL PRIMARY KEY,
+  ronda_id      INTEGER NOT NULL REFERENCES rondas_actas(id) ON DELETE CASCADE,
+  vigilador_id  INTEGER NOT NULL REFERENCES vigiladores(id),
+  motivo        TEXT NOT NULL CHECK (motivo IN ('franco','licencia','relevo','ausente_sin_aviso')),
+  nota          TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_ronda_ausencias_ronda ON ronda_ausencias(ronda_id);
 
 CREATE TABLE IF NOT EXISTS checklist_respuestas (
   id                  SERIAL PRIMARY KEY,
@@ -185,6 +305,23 @@ CREATE TABLE IF NOT EXISTS checklist_respuestas (
   observacion_pred    TEXT,
   observacion_libre   TEXT
 );
+
+-- Agregadas por separado (no en el CREATE TABLE) para que apliquen retroactivamente
+-- en bases donde la tabla ya existía sin estas constraints.
+DO $$ BEGIN
+  ALTER TABLE checklist_respuestas
+    ADD CONSTRAINT checklist_respuestas_item_fk
+    FOREIGN KEY (item_id) REFERENCES checklist_items(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE checklist_respuestas
+    ADD CONSTRAINT checklist_respuestas_valoracion_check CHECK (valoracion IN ('B','R','M'));
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_checklist_respuestas_ronda ON checklist_respuestas(ronda_id);
 
 /* ─────────────────────────────────────────────
    EVIDENCIA FOTOGRÁFICA — PRD §8 paso 5
@@ -220,6 +357,83 @@ ALTER TABLE tickets_incidencias ADD COLUMN IF NOT EXISTS item_titulo       TEXT;
 ALTER TABLE tickets_incidencias ADD COLUMN IF NOT EXISTS valoracion        TEXT;
 ALTER TABLE tickets_incidencias ADD COLUMN IF NOT EXISTS vigilador_id      INTEGER REFERENCES vigiladores(id);
 
+/* Panel de Administración — SLA, asignación y ciclo de reasignación (t5 wireframe) */
+ALTER TABLE tickets_incidencias ADD COLUMN IF NOT EXISTS severidad         TEXT NOT NULL DEFAULT 'media';
+ALTER TABLE tickets_incidencias ADD COLUMN IF NOT EXISTS sla_horas         INTEGER NOT NULL DEFAULT 48;
+ALTER TABLE tickets_incidencias ADD COLUMN IF NOT EXISTS sla_venc          TIMESTAMP;
+ALTER TABLE tickets_incidencias ADD COLUMN IF NOT EXISTS asignado_a        INTEGER REFERENCES usuarios(id);
+ALTER TABLE tickets_incidencias ADD COLUMN IF NOT EXISTS tipo_solucion     TEXT;
+ALTER TABLE tickets_incidencias ADD COLUMN IF NOT EXISTS verificar_proxima_ronda BOOLEAN DEFAULT FALSE;
+ALTER TABLE tickets_incidencias ADD COLUMN IF NOT EXISTS motivo_rechazo    TEXT;
+ALTER TABLE tickets_incidencias ADD COLUMN IF NOT EXISTS duplicado_de      INTEGER REFERENCES tickets_incidencias(id);
+
+DO $$ BEGIN
+  ALTER TABLE tickets_incidencias
+    ADD CONSTRAINT tickets_incidencias_severidad_check CHECK (severidad IN ('critica','alta','media','baja'));
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE tickets_incidencias
+    ADD CONSTRAINT tickets_incidencias_estado_check2 CHECK (estado IN ('ABIERTO','RESUELTO','RECHAZADO','DUPLICADO'));
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+END $$;
+
+-- sla_venc se completa al crear el ticket (fecha_creacion + sla_horas); backfill para filas existentes.
+UPDATE tickets_incidencias SET sla_venc = fecha_creacion + (sla_horas || ' hours')::INTERVAL WHERE sla_venc IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_tickets_sla_venc    ON tickets_incidencias(sla_venc);
+CREATE INDEX IF NOT EXISTS idx_tickets_asignado     ON tickets_incidencias(asignado_a);
+
+/* Reasignaciones — historial de a quién y por qué (5d: "el SLA no se reinicia al reasignar") */
+CREATE TABLE IF NOT EXISTS tickets_reasignaciones (
+  id            SERIAL PRIMARY KEY,
+  ticket_id     INTEGER NOT NULL REFERENCES tickets_incidencias(id) ON DELETE CASCADE,
+  de_usuario_id INTEGER REFERENCES usuarios(id),
+  a_usuario_id  INTEGER NOT NULL REFERENCES usuarios(id),
+  nota          TEXT,
+  fecha         TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reasignaciones_ticket ON tickets_reasignaciones(ticket_id);
+
+/* Notas de auditoría sobre actas — nunca editan el acta original (5e) */
+CREATE TABLE IF NOT EXISTS actas_notas_auditoria (
+  id          SERIAL PRIMARY KEY,
+  ronda_id    INTEGER NOT NULL REFERENCES rondas_actas(id) ON DELETE CASCADE,
+  usuario_id  INTEGER NOT NULL REFERENCES usuarios(id),
+  nota        TEXT NOT NULL,
+  fecha       TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_actas_notas_ronda ON actas_notas_auditoria(ronda_id);
+
+-- Constraints agregadas por separado (no en el ADD COLUMN) para que apliquen
+-- retroactivamente en bases ya existentes donde la columna se creó antes sin ellas.
+DO $$ BEGIN
+  ALTER TABLE tickets_incidencias
+    ADD CONSTRAINT tickets_incidencias_checklist_item_fk
+    FOREIGN KEY (checklist_item_id) REFERENCES checklist_items(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+END $$;
+
+-- Un ticket solo se genera para respuestas problemáticas (R=regular, M=malo);
+-- 'B' (bien) nunca produce un ticket, coincide con la validación de server.js.
+DO $$ BEGIN
+  ALTER TABLE tickets_incidencias
+    ADD CONSTRAINT tickets_incidencias_valoracion_check CHECK (valoracion IN ('R','M'));
+EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE tickets_incidencias ADD CONSTRAINT tickets_incidencias_codigo_key UNIQUE (codigo_ticket);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR unique_violation THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_tickets_estado     ON tickets_incidencias(estado);
+CREATE INDEX IF NOT EXISTS idx_tickets_ronda       ON tickets_incidencias(ronda_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_vigilador   ON tickets_incidencias(vigilador_id);
+
 -- ═══════════════════════════════════════════════════════════════
 -- SEED
 -- ═══════════════════════════════════════════════════════════════
@@ -240,7 +454,7 @@ INSERT INTO objetivos (nombre, tipo, subtipo, modalidad, direccion, lat, lng, ra
   ('Local Comercial Av. Corrientes', 'Locales',    'local_comercial',     'unipersonal', 'Av. Corrientes 2450, CABA',      -34.6037, -58.3968, 120, 12),
   ('Shopping Norte',                 'Locales',    'local_comercial',     'multipuesto', 'Av. Cabildo 3100, CABA',         -34.5567, -58.4614, 200, 8),
   ('Corporativo Torre Madero',       'Locales',    'empresa_oficinas',    'unipersonal', 'Juana Manso 1150, Pto. Madero',  -34.6098, -58.3627, 150, 6),
-  ('Barrio Demo Cercano',            'Barrios',    'barrio_unipersonal',  'unipersonal', 'Mendoza, Argentina (ubicación de prueba)', -32.93945, -68.85075, 500, 4)
+  ('Barrio Demo Cercano',            'Barrios',    'barrio_unipersonal',  'unipersonal', 'Mendoza, Argentina (ubicación de prueba)', -33.0065563773082, -68.87021036414507, 500, 4)
 ON CONFLICT (nombre) DO UPDATE SET
   subtipo          = EXCLUDED.subtipo,
   modalidad        = EXCLUDED.modalidad,
@@ -466,7 +680,17 @@ VALUES
   (1201, 'Néstor Fabián Quiroga', '33.901.556', 'Vigilador Nocturno C', 'NQ-5104-B', '2027-01-30',
    FALSE, NULL, NULL, FALSE, 'suspendido',
    '11-3388-9921', 'Mitre 733, Campana', '1988-07-30', 'Argentina', 'UPSRA', FALSE,
-   (SELECT id FROM objetivos WHERE nombre='Local Comercial Av. Corrientes'))
+   (SELECT id FROM objetivos WHERE nombre='Local Comercial Av. Corrientes')),
+
+  (1276, 'Marcelo Ariel Funes', '27.845.112', 'Vigilador Diurno A', 'FN-2210-A', '2026-11-05',
+   TRUE, 'B1', '2027-05-18', FALSE, 'activo',
+   '261-455-7823', 'Godoy Cruz 1450, Mendoza', '1990-06-14', 'Argentina', 'UPSRA', TRUE,
+   (SELECT id FROM objetivos WHERE nombre='Barrio Demo Cercano')),
+
+  (1319, 'Yamila Soledad Paredes', '34.117.890', 'Vigiladora Nocturna B', 'YP-3387-B', '2026-09-22',
+   FALSE, NULL, NULL, FALSE, 'activo',
+   '261-398-2246', 'Las Heras 620, Mendoza', '1994-02-27', 'Argentina', 'UPSRA', TRUE,
+   (SELECT id FROM objetivos WHERE nombre='Barrio Demo Cercano'))
 
 ON CONFLICT (legajo) DO UPDATE SET
   nombre               = EXCLUDED.nombre,

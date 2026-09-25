@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ASI · Argentina Seguridad Integral</title>
-  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
@@ -14,7 +14,7 @@
       theme: {
         extend: {
           colors: {
-            ink:   { DEFAULT:"#0f172a", soft:"#334155", mute:"#5b6b82", faint:"#94a3b8" },
+            ink:   { DEFAULT:"#0f172a", soft:"#334155", mute:"#5b6b82", faint:"#64748b" },
             brand: { 50:"#eff6ff",100:"#dbeafe",200:"#bfdbfe",300:"#93c5fd",400:"#60a5fa",500:"#3b82f6",600:"#2563eb",700:"#1d4ed8",800:"#1e40af" },
             aqua:  { 50:"#f0f9ff",100:"#e0f2fe",200:"#bae6fd",300:"#7dd3fc",400:"#38bdf8",500:"#0ea5e9" },
             good:  { DEFAULT:"#10b981", soft:"#d1fae5", ink:"#065f46" },
@@ -63,6 +63,9 @@
       box-shadow:
         inset 5px 5px 11px rgba(37,99,235,.11),
         inset -5px -5px 11px rgba(255,255,255,.95);
+    }
+    .clay-inset:focus-within {
+      outline: 3px solid #2563eb; outline-offset: 2px;
     }
     .clay-tint {
       border-radius: 22px;
@@ -120,6 +123,37 @@
       background-image: linear-gradient(135deg, rgba(37,99,235,.05) 25%, transparent 25%, transparent 50%, rgba(37,99,235,.05) 50%, rgba(37,99,235,.05) 75%, transparent 75%);
       background-size: 14px 14px;
     }
+
+    /* ═══════ Adaptación desktop/tablet — solo Admin y Dueño ═══════
+       PhoneFrame aplica los modificadores "--wide" únicamente cuando el
+       panel activo es admin/dueño (ver AppInner). Login y Supervisor
+       siguen renderizando .device-wrap/.device-shell sin el modificador,
+       así que estas reglas @media nunca los afectan, sin importar el
+       ancho del viewport — quedan fijos en el marco de teléfono. */
+    .device-wrap { width: 100%; max-width: 392px; }
+    @media (min-width: 768px) {
+      .device-wrap.device-wrap--wide { max-width: 720px; }
+    }
+    @media (min-width: 1024px) {
+      .device-wrap.device-wrap--wide { max-width: 1080px; }
+    }
+    .device-shell {
+      background: #eaf2fd; border-radius: 44px; overflow: hidden; height: 784px;
+      border: 9px solid #ffffff; position: relative; display: flex; flex-direction: column;
+      box-shadow: 22px 22px 55px rgba(37,99,235,.22), -16px -16px 44px rgba(255,255,255,.95), inset 0 1px 2px rgba(255,255,255,.9);
+    }
+    @media (min-width: 768px) {
+      /* El bezel de teléfono deja de tener sentido en un panel ancho de
+         escritorio: se cambia por la elevación estándar Clay (xl, 28px)
+         del propio sistema de diseño en vez de inventar una nueva. */
+      .device-shell.device-shell--wide {
+        border-radius: 28px; border: none; height: auto; min-height: calc(100vh - 108px);
+        box-shadow: 8px 8px 18px rgba(37,99,235,.10), -6px -6px 14px rgba(255,255,255,.95),
+          inset -1px -1px 2px rgba(191,219,254,.30), inset 1px 1px 2px rgba(255,255,255,.90);
+      }
+      .device-shell--wide .phone-chrome { display: none; }
+      .device-shell--wide .device-body { overflow: visible; }
+    }
   </style>
 </head>
 <body>
@@ -165,7 +199,11 @@ function useDeviceGeolocation() {
         setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
         setError(null);
       },
-      (err) => setError(err.code === 1 ? "denied" : err.code === 2 ? "unavailable" : "timeout"),
+      (err) => {
+        // Una posición anterior no prueba la ubicación actual si se perdió la señal.
+        setCoords(null);
+        setError(err.code === 1 ? "denied" : err.code === 2 ? "unavailable" : "timeout");
+      },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
     );
     return () => navigator.geolocation.clearWatch(id);
@@ -186,7 +224,7 @@ const SEED_OBJETIVOS = [
   { id:5, nombre:"Local Comercial Av. Corrientes", tipo:"Locales",    subtipo:"local_comercial",    modalidad:"unipersonal", direccion:"Av. Corrientes 2450, CABA",     lat:-34.6037, lng:-58.3968, radio_geocerca_m:120, visitas_meta_mes:12, visitas_mes:9 },
   { id:6, nombre:"Shopping Norte",                 tipo:"Locales",    subtipo:"local_comercial",    modalidad:"multipuesto", direccion:"Av. Cabildo 3100, CABA",        lat:-34.5567, lng:-58.4614, radio_geocerca_m:200, visitas_meta_mes:8,  visitas_mes:6 },
   { id:7, nombre:"Corporativo Torre Madero",       tipo:"Locales",    subtipo:"empresa_oficinas",   modalidad:"unipersonal", direccion:"Juana Manso 1150, Pto. Madero", lat:-34.6098, lng:-58.3627, radio_geocerca_m:150, visitas_meta_mes:6,  visitas_mes:3 },
-  { id:8, nombre:"Barrio Demo Cercano",             tipo:"Barrios",    subtipo:"barrio_unipersonal",  modalidad:"unipersonal", direccion:"Mendoza, Argentina (ubicación de prueba)", lat:-32.93945, lng:-68.85075, radio_geocerca_m:500, visitas_meta_mes:4,  visitas_mes:0 },
+  { id:8, nombre:"Barrio Demo Cercano",             tipo:"Barrios",    subtipo:"barrio_unipersonal",  modalidad:"unipersonal", direccion:"Mendoza, Argentina (ubicación de prueba)", lat:-33.0065563773082, lng:-68.87021036414507, radio_geocerca_m:500, visitas_meta_mes:4,  visitas_mes:0 },
 ];
 
 const SEED_VIGILADORES = [
@@ -206,6 +244,14 @@ const SEED_VIGILADORES = [
     credencial_numero:"NQ-5104-B", credencial_venc:"2027-01-30", es_chofer:false, licencia_cat:null, licencia_venc:null, armado:false,
     telefono:"11-3388-9921", domicilio:"Mitre 733, Campana", fecha_nacimiento:"1988-07-30", nacionalidad:"Argentina", convenio:"UPSRA", tiene_radio:false,
     objetivo_asignado:"Local Comercial Av. Corrientes" },
+  { id:5, legajo:1276, nombre:"Marcelo Ariel Funes", dni:"27.845.112", puesto:"Vigilador Diurno A", estado:"activo",
+    credencial_numero:"FN-2210-A", credencial_venc:"2026-11-05", es_chofer:true, licencia_cat:"B1", licencia_venc:"2027-05-18", armado:false,
+    telefono:"261-455-7823", domicilio:"Godoy Cruz 1450, Mendoza", fecha_nacimiento:"1990-06-14", nacionalidad:"Argentina", convenio:"UPSRA", tiene_radio:true,
+    objetivo_asignado:"Barrio Demo Cercano" },
+  { id:6, legajo:1319, nombre:"Yamila Soledad Paredes", dni:"34.117.890", puesto:"Vigiladora Nocturna B", estado:"activo",
+    credencial_numero:"YP-3387-B", credencial_venc:"2026-09-22", es_chofer:false, licencia_cat:null, licencia_venc:null, armado:false,
+    telefono:"261-398-2246", domicilio:"Las Heras 620, Mendoza", fecha_nacimiento:"1994-02-27", nacionalidad:"Argentina", convenio:"UPSRA", tiene_radio:true,
+    objetivo_asignado:"Barrio Demo Cercano" },
 ];
 
 const SEED_HISTORIAL = {
@@ -492,11 +538,11 @@ function Clay({ children, className = "", inset = false, tint, as: Tag = "div", 
 }
 
 const BTN_VARIANTS = {
-  primary: "bg-gradient-to-br from-brand-500 to-brand-700 text-white",
+  primary: "bg-gradient-to-br from-brand-600 to-brand-800 text-white",
   aqua:    "bg-gradient-to-br from-aqua-300 to-aqua-500 text-white",
-  success: "bg-gradient-to-br from-good to-emerald-600 text-white",
-  danger:  "bg-gradient-to-br from-bad to-rose-600 text-white",
-  warn:    "bg-gradient-to-br from-warn to-amber-500 text-white",
+  success: "bg-gradient-to-br from-emerald-700 to-emerald-800 text-white",
+  danger:  "bg-gradient-to-br from-rose-600 to-rose-800 text-white",
+  warn:    "bg-gradient-to-br from-amber-700 to-amber-800 text-white",
   white:   "bg-white text-ink-soft",
   soft:    "bg-brand-50 text-brand-700",
   ghost:   "bg-transparent text-ink-mute shadow-none",
@@ -687,7 +733,7 @@ function Sheet({ open, onClose, title, sub, children, maxH = "86%" }) {
 
   if (!open) return null;
   return (
-    <div className="absolute inset-0 z-50 flex items-end a-fade" style={{ background:"rgba(15,23,42,.34)", backdropFilter:"blur(3px)" }}
+    <div className="absolute inset-0 z-50 flex items-end a-fade" style={{ background:"rgba(15,23,42,.42)" }}
       onClick={e => e.target === e.currentTarget && onClose()} role="dialog" aria-modal="true">
       <div className="w-full bg-[#f2f7fe] a-sheet flex flex-col"
         style={{ maxHeight:maxH, borderRadius:"30px 30px 0 0", boxShadow:"0 -14px 40px rgba(15,23,42,.20)" }}>
@@ -785,6 +831,61 @@ function estamparFoto(dataUrl, meta) {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   PERSISTENCIA DE LA COLA OFFLINE — IndexedDB (PRD §10)
+   Sin esto, un refresh o cierre de pestaña mientras hay actas
+   encoladas offline las pierde por completo. Se usa IndexedDB
+   y no localStorage porque las fotos en base64 pueden pesar
+   varios MB y arriesgan QuotaExceededError.
+═══════════════════════════════════════════════════════════ */
+const QUEUE_DB_NAME = "asi_offline_queue";
+const QUEUE_STORE   = "queue";
+
+function abrirQueueDB() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) { reject(new Error("IndexedDB no disponible")); return; }
+    const req = indexedDB.open(QUEUE_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(QUEUE_STORE)) {
+        req.result.createObjectStore(QUEUE_STORE, { keyPath: "id" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function leerQueuePersistida() {
+  try {
+    const db = await abrirQueueDB();
+    return await new Promise((resolve, reject) => {
+      const store = db.transaction(QUEUE_STORE, "readonly").objectStore(QUEUE_STORE);
+      const req   = store.getAll();
+      req.onsuccess = () => resolve(req.result.map(r => r.item));
+      req.onerror   = () => reject(req.error);
+    });
+  } catch (e) {
+    console.warn("[queue] IndexedDB no disponible, cola solo en memoria:", e.message);
+    return [];
+  }
+}
+
+async function guardarQueuePersistida(items) {
+  try {
+    const db = await abrirQueueDB();
+    await new Promise((resolve, reject) => {
+      const tx    = db.transaction(QUEUE_STORE, "readwrite");
+      const store = tx.objectStore(QUEUE_STORE);
+      store.clear();
+      items.forEach((item, id) => store.put({ id, item }));
+      tx.oncomplete = resolve;
+      tx.onerror    = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn("[queue] no se pudo persistir la cola:", e.message);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
    CONTEXTO GLOBAL — única fuente de verdad de la app
    Funciona con datos semilla y, si hay API conectada,
    sustituye por los datos reales de PostgreSQL.
@@ -806,6 +907,21 @@ function AppProvider({ children }) {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState(null);
   const [ticketSeq, setTicketSeq] = useState(42);
+
+  // Hidrata la cola desde IndexedDB al montar (sobrevive a un refresh/cierre de pestaña)
+  const [queueHidratada, setQueueHidratada] = useState(false);
+  useEffect(() => {
+    leerQueuePersistida().then(items => {
+      if (items.length) setQueue(items);
+      setQueueHidratada(true);
+    });
+  }, []);
+
+  // Persiste cada cambio — recién después de hidratar, para no pisar lo guardado con [] al montar
+  useEffect(() => {
+    if (!queueHidratada) return;
+    guardarQueuePersistida(queue);
+  }, [queue, queueHidratada]);
 
   /* ── Capa de API ── */
   const [apiUrl,      setApiUrl]      = useState("");
@@ -890,6 +1006,11 @@ function AppProvider({ children }) {
       porTipo[t].completadas += visitasPorObj[o.id] || 0;
       porTipo[t].total       += o.visitas_meta_mes || 0;
     }
+    const porObjetivo = objetivos.map(o => ({ ...o, realizadas: visitasPorObj[o.id] || 0 }));
+    const objetivosEnRiesgo = porObjetivo.filter(o =>
+      o.realizadas < (o.visitas_meta_mes || 0) * 0.8 &&
+      ticketsActivos.some(t => t.obj === o.nombre && t.estado === "Activo"));
+
     return {
       visitas:     hechas,
       metaVisitas: metaTotal || 1,
@@ -897,7 +1018,9 @@ function AppProvider({ children }) {
       activas:     ticketsActivos.filter(t => t.estado === "Activo").length,
       cerradas:    ticketsActivos.filter(t => t.estado === "Cerrado").length,
       porTipo,
-      porObjetivo: objetivos.map(o => ({ ...o, realizadas: visitasPorObj[o.id] || 0 })),
+      porObjetivo,
+      objetivosEnRiesgo,
+      reincidencias: [],
     };
   }, [objetivos, visitasPorObj, ticketsActivos]);
 
@@ -946,7 +1069,7 @@ function AppProvider({ children }) {
         tickets.push({
           id: `INC-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}-${String(n).padStart(4,"0")}`,
           obj: rd.objetivo?.nombre || "—", sup: supervisorNombre, val: "M", area: "RRHH", estado: "Activo",
-          desc: `Negativa a firmar el acta — ${v.nombre} (legajo ${v.legajo})`,
+          desc: `Negativa a firmar el acta — ${v.nombre} (legajo ${v.legajo}). Motivo: ${f.motivoNegativa || "no informado"}`,
           item: "Firma del acta", vig: v.nombre, fecha: stamp, isNew: true,
         });
       }
@@ -978,17 +1101,20 @@ function AppProvider({ children }) {
     const body = {
       objetivo_id: objId,
       tipo: rd.tipo || "presencial",
-      en_geocerca: rd.gpsStatus === "inside",
       lat: rd.deviceCoords?.lat ?? null, lng: rd.deviceCoords?.lng ?? null,
+      precision_gps_m: rd.deviceCoords?.accuracy ?? null,
       justificacion_fuera: rd.justificacion || null,
       sincronizado_offline: Boolean(rd._offline),
       hora_inicio: rd.horaInicio ? new Date(rd.horaInicio).toISOString() : null,
       hora_fin:    new Date().toISOString(),
       vigiladores: (rd.vigiladores || []).map(v => ({
         id: v.id,
-        firma_base64: rd.firmas?.[v.id]?.dataUrl || null,
-        nego_firmar:  Boolean(rd.firmas?.[v.id]?.nego),
+        firma_base64:    rd.firmas?.[v.id]?.dataUrl || null,
+        nego_firmar:     Boolean(rd.firmas?.[v.id]?.nego),
+        motivo_negativa: rd.firmas?.[v.id]?.motivoNegativa || null,
+        aviso_registrado: Boolean(rd.firmas?.[v.id]?.avisoRegistrado),
       })),
+      ausencias: (rd.ausencias || []).map(a => ({ vigilador_id: a.vigilador_id, motivo: a.motivo, nota: a.nota || null })),
       checklist: Object.entries(rd.respuestas || {}).map(([itemId, r]) => {
         const def = checklistDefs.find(d => String(d.id) === String(itemId)) || {};
         return {
@@ -1042,15 +1168,32 @@ function AppProvider({ children }) {
     setSyncing(true); setSyncMsg(null);
 
     await new Promise(r => setTimeout(r, 1400)); // latencia simulada de red
-    _commit(pend.map(p => p.acta));
+
+    // Trackea éxito/fracaso por acta — una acta que falla queda en la cola
+    // para el próximo reintento en vez de darse por sincronizada igual.
+    const exitosas = [];
+    const fallidas = [];
 
     if (apiStatus === "connected" && currentUser?.rol === "supervisor") {
-      for (const p of pend) { try { await enviarActaApi(p.rd, p.acta); } catch (e) { console.warn("[sync]", e.message); } }
+      for (const p of pend) {
+        try { await enviarActaApi(p.rd, p.acta); exitosas.push(p); }
+        catch (e) { console.warn("[sync]", e.message); fallidas.push(p); }
+      }
+    } else {
+      // Sin backend real conectado: se guarda localmente igual (modo demo/offline permanente)
+      exitosas.push(...pend);
     }
 
-    setQueue([]); setSyncing(false);
-    const n = pend.length;
-    setSyncMsg({ tone:"good", text:`${n} acta${n > 1 ? "s" : ""} sincronizada${n > 1 ? "s" : ""} con el servidor.` });
+    if (exitosas.length) _commit(exitosas.map(p => p.acta));
+    setQueue(fallidas);
+    setSyncing(false);
+
+    const n = exitosas.length, f = fallidas.length;
+    if (f === 0) {
+      setSyncMsg({ tone:"good", text:`${n} acta${n > 1 ? "s" : ""} sincronizada${n > 1 ? "s" : ""} con el servidor.` });
+    } else {
+      setSyncMsg({ tone:"warn", text:`${n} sincronizada${n === 1 ? "" : "s"}, ${f} pendiente${f === 1 ? "" : "s"} — se reintentará.` });
+    }
     setTimeout(() => setSyncMsg(null), 5200);
   }, [apiStatus, currentUser, enviarActaApi, syncing]);
 
@@ -1152,7 +1295,7 @@ function SyncToast() {
   let text = null, tone = "brand", icon = "cloud";
 
   if (syncing)            { text = `Procesando ${queue.length} acta${queue.length !== 1 ? "s" : ""} en cola…`; tone = "brand"; icon = "refresh"; }
-  else if (syncMsg)       { text = syncMsg.text; tone = syncMsg.tone; icon = "check-circle"; }
+  else if (syncMsg)       { text = syncMsg.text; tone = syncMsg.tone; icon = syncMsg.tone === "warn" ? "alert" : "check-circle"; }
   else if (offline && queue.length) { text = `${queue.length} acta${queue.length > 1 ? "s" : ""} en cola local · se enviará al recuperar señal`; tone = "warn"; icon = "cloud-off"; }
 
   if (!text) return null;
@@ -1355,8 +1498,12 @@ function Step1({ rd, setRD, onNext }) {
   const gps = gpsErr ? "error" : !coords ? "searching" : !obj ? "searching" : (distancia <= obj.radio_geocerca_m ? "inside" : "outside");
 
   useEffect(() => {
-    if (!coords) return;
-    setRD(p => ({ ...p, deviceCoords: coords, gpsStatus: gps, distanciaGeocerca: distancia != null ? Math.round(distancia) : null }));
+    setRD(p => ({
+      ...p,
+      deviceCoords: coords || null,
+      gpsStatus: gps,
+      distanciaGeocerca: distancia != null ? Math.round(distancia) : null,
+    }));
   }, [coords, gps, distancia]);
 
   const lista = useMemo(() => {
@@ -1439,7 +1586,7 @@ function Step1({ rd, setRD, onNext }) {
           <Icon name="search" size={16} className="text-ink-faint" />
           <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar objetivo o dirección…"
             className="flex-1 bg-transparent outline-none text-sm font-semibold text-ink placeholder:text-ink-faint placeholder:font-medium min-w-0" />
-          {busca && <button onClick={() => setBusca("")} className="text-ink-faint p-0.5" aria-label="Limpiar"><Icon name="x" size={15} /></button>}
+          {busca && <button onClick={() => setBusca("")} className="text-ink-faint p-1.5" aria-label="Limpiar"><Icon name="x" size={15} /></button>}
         </div>
 
         {lista.length === 0 && <Empty icon="search" title="Sin resultados" sub="Probá con otro nombre o dirección." />}
@@ -1673,6 +1820,13 @@ function PerfilVigilador({ v, historial = [], sanciones = [], incidencias = [] }
 /* ═══════════════════════════════════════════════════════════
    PASO 2 — Vigiladores a inspeccionar (múltiples · PRD §2.1)
 ═══════════════════════════════════════════════════════════ */
+const MOTIVO_AUSENCIA = {
+  franco:             "Franco",
+  licencia:           "Licencia",
+  relevo:             "Relevo",
+  ausente_sin_aviso:  "Ausente sin aviso",
+};
+
 function Step2({ rd, setRD, onNext, onBack }) {
   const { vigiladores, apiStatus, apiFetch } = useApp();
   const [legajo, setLegajo] = useState("");
@@ -1680,6 +1834,26 @@ function Step2({ rd, setRD, onNext, onBack }) {
   const [busy,   setBusy]   = useState(false);
   const [perfil, setPerfil] = useState(null);
   const sel = rd.vigiladores || [];
+  const ausencias = rd.ausencias || [];
+
+  // Vigiladores esperados del objetivo que todavía no se marcaron presentes (2c)
+  const esperados = vigiladores.filter(v =>
+    v.objetivo_asignado === rd.objetivo?.nombre && !sel.some(s => s.id === v.id));
+
+  const setMotivoAusencia = (vigilador_id, motivo) => setRD(p => {
+    const resto = (p.ausencias || []).filter(a => a.vigilador_id !== vigilador_id);
+    return { ...p, ausencias: [...resto, { vigilador_id, motivo }] };
+  });
+
+  const marcarPresente = (v) => setRD(p => ({
+    ...p,
+    vigiladores: (p.vigiladores || []).some(actual => actual.id === v.id)
+      ? p.vigiladores
+      : [...(p.vigiladores || []), v],
+    ausencias: (p.ausencias || []).filter(a => a.vigilador_id !== v.id),
+  }));
+
+  const ausenciasIncompletas = esperados.filter(v => !ausencias.some(a => a.vigilador_id === v.id));
 
   const agregar = async () => {
     setError(null);
@@ -1719,7 +1893,7 @@ function Step2({ rd, setRD, onNext, onBack }) {
 
   return (
     <div className="flex flex-col gap-4 px-4 py-4 a-fade">
-      <SH title="Vigiladores" sub={`Cargá el legajo de cada persona a inspeccionar en ${cortar(rd.objetivo?.nombre || "el objetivo", 26)}`} />
+      <SH title="Vigiladores" sub={`Los asignados a ${cortar(rd.objetivo?.nombre || "el objetivo", 26)} se cargan automáticamente. Confirmá presencia o ausencia.`} />
 
       <Clay className="p-4">
         <Label className="mb-2">Número de legajo</Label>
@@ -1776,10 +1950,43 @@ function Step2({ rd, setRD, onNext, onBack }) {
         </div>
       )}
 
+      {esperados.length > 0 && (
+        <div className="flex flex-col gap-2.5">
+          <Label>{esperados.length} vigilador{esperados.length > 1 ? "es" : ""} del objetivo sin marcar presente</Label>
+          {esperados.map(v => {
+            const actual = ausencias.find(a => a.vigilador_id === v.id);
+            return (
+              <Clay key={v.id} className="p-3.5">
+                <div className="flex items-center gap-3 mb-2.5">
+                  <Avatar nombre={v.nombre} size={38} src={v.foto_url} tone="warn" />
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-black text-ink leading-tight truncate">{v.nombre}</p>
+                    <p className="text-[10px] text-ink-mute mt-0.5">Legajo {v.legajo} · ¿Por qué no está?</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button onClick={() => marcarPresente(v)}
+                    className="clay-btn col-span-2 py-2.5 rounded-[12px] text-[10px] font-black bg-good text-white">
+                    Está presente
+                  </button>
+                  {Object.entries(MOTIVO_AUSENCIA).map(([k, label]) => (
+                    <button key={k} onClick={() => setMotivoAusencia(v.id, k)}
+                      className={cx("clay-btn py-2 rounded-[12px] text-[10px] font-black transition-all",
+                        actual?.motivo === k ? "bg-warn text-white" : "bg-white text-ink-mute")}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </Clay>
+            );
+          })}
+        </div>
+      )}
+
       <div className="flex gap-2.5 mt-1">
         <Btn variant="white" icon="arrow-l" onClick={onBack} className="px-4">Atrás</Btn>
-        <Btn full size="lg" disabled={sel.length === 0} onClick={onNext} iconRight="arrow-r">
-          Continuar al checklist
+        <Btn full size="lg" disabled={sel.length === 0 || ausenciasIncompletas.length > 0} onClick={onNext} iconRight="arrow-r">
+          {ausenciasIncompletas.length > 0 ? "Indicá el motivo de cada ausencia" : "Continuar al checklist"}
         </Btn>
       </div>
 
@@ -2104,11 +2311,21 @@ function Step3({ rd, setRD, onNext, onBack }) {
 /* ═══════════════════════════════════════════════════════════
    PASO 4 — Evidencia fotográfica con marca de agua (PRD §8.5)
 ═══════════════════════════════════════════════════════════ */
+// Foto obligatoria según severidad configurada por ítem (foto_requerida_en: nunca|R|M) — Step3, 2d
+const FOTO_RANK   = { nunca: 99, R: 1, M: 2 };
+const ESTADO_RANK = { B: 0, R: 1, M: 2 };
+
 function Step4({ rd, setRD, onNext, onBack, supervisor }) {
+  const { checklistDefs } = useApp();
   const [cargando, setCargando] = useState(false);
   const [ver, setVer] = useState(null);
   const inputRef = useRef(null);
   const fotos = rd.fotos || [];
+
+  const requierenFoto = Object.entries(rd.respuestas || {})
+    .map(([id, r]) => ({ def: checklistDefs.find(d => String(d.id) === String(id)), r }))
+    .filter(({ def, r }) => def && ESTADO_RANK[r.estado] >= FOTO_RANK[def.foto_requerida_en || "M"]);
+  const faltaFoto = requierenFoto.length > 0 && fotos.length === 0;
 
   const tomar = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -2147,7 +2364,22 @@ function Step4({ rd, setRD, onNext, onBack, supervisor }) {
 
   return (
     <div className="flex flex-col gap-4 px-4 py-4 a-fade">
-      <SH title="Evidencia fotográfica" sub="Opcional · cada foto se sella con fecha, hora, GPS y supervisor" />
+      <SH title="Evidencia fotográfica"
+        sub={requierenFoto.length > 0 ? "Obligatoria para los ítems marcados abajo · se sella con fecha, hora, GPS y supervisor" : "Opcional · cada foto se sella con fecha, hora, GPS y supervisor"} />
+
+      {requierenFoto.length > 0 && (
+        <div className={cx("rounded-[16px] px-4 py-3 flex items-start gap-2", faltaFoto ? "bg-bad-soft" : "bg-good-soft")}>
+          <Icon name={faltaFoto ? "alert" : "check-circle"} size={15} className={cx("mt-px", faltaFoto ? "text-bad-ink" : "text-good-ink")} />
+          <div className="min-w-0">
+            <p className={cx("text-[11px] font-black leading-snug", faltaFoto ? "text-bad-ink" : "text-good-ink")}>
+              {faltaFoto ? "Estos ítems exigen foto de evidencia:" : "Evidencia obligatoria cargada"}
+            </p>
+            {faltaFoto && requierenFoto.map(({ def }) => (
+              <p key={def.id} className="text-[11px] text-bad-ink/80 font-semibold">· {def.titulo_corto}</p>
+            ))}
+          </div>
+        </div>
+      )}
 
       <input ref={inputRef} type="file" accept="image/*" capture="environment" multiple onChange={tomar} className="hidden" />
 
@@ -2169,7 +2401,7 @@ function Step4({ rd, setRD, onNext, onBack, supervisor }) {
             {fotos.map((f, i) => (
               <div key={i} className="clay p-1.5 a-pop relative overflow-hidden" style={{ animationDelay:`${i * 60}ms` }}>
                 <button onClick={() => setVer(f)} className="block w-full focus-ring rounded-[16px] overflow-hidden">
-                  <img src={f.dataUrl} alt={`Evidencia ${i + 1}`} className="w-full h-28 object-cover rounded-[16px]" />
+                  <img src={f.dataUrl} alt={`Evidencia ${i + 1}`} className="w-full h-28 object-cover rounded-[16px]" loading="lazy" />
                 </button>
                 <button onClick={() => quitar(i)} aria-label="Quitar foto"
                   className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/95 text-bad flex items-center justify-center shadow-md">
@@ -2190,8 +2422,8 @@ function Step4({ rd, setRD, onNext, onBack, supervisor }) {
 
       <div className="flex gap-2.5">
         <Btn variant="white" icon="arrow-l" onClick={onBack} className="px-4">Atrás</Btn>
-        <Btn full size="lg" onClick={onNext} iconRight="arrow-r">
-          {fotos.length ? "Continuar a firmas" : "Omitir y firmar"}
+        <Btn full size="lg" disabled={faltaFoto} onClick={onNext} iconRight="arrow-r">
+          {faltaFoto ? "Falta la foto obligatoria" : fotos.length ? "Continuar a firmas" : "Omitir y firmar"}
         </Btn>
       </div>
 
@@ -2277,8 +2509,19 @@ function Step5({ rd, setRD, onGuardar, onBack, guardando }) {
     const prev = p.firmas?.[id] || {};
     return { ...p, firmas: { ...(p.firmas || {}), [id]: { dataUrl: prev.nego ? prev.dataUrl : null, nego: !prev.nego } } };
   });
+  const setMotivoNegativa = (id, motivo) => setRD(p => ({
+    ...p, firmas: { ...(p.firmas || {}), [id]: { ...(p.firmas?.[id] || {}), motivoNegativa: motivo } },
+  }));
+  const setAvisoRegistrado = (id, valor) => setRD(p => ({
+    ...p, firmas: { ...(p.firmas || {}), [id]: { ...(p.firmas?.[id] || {}), avisoRegistrado: valor } },
+  }));
 
-  const firmados = vigs.filter(v => firmas[v.id]?.dataUrl || firmas[v.id]?.nego).length;
+  // Una negativa solo cuenta como resuelta cuando tiene motivo declarado y se avisó al vigilador (2g)
+  const negativaCompleta = (v) => {
+    const f = firmas[v.id];
+    return f?.nego && f.motivoNegativa?.trim().length >= 5 && f.avisoRegistrado;
+  };
+  const firmados = vigs.filter(v => firmas[v.id]?.dataUrl || negativaCompleta(v)).length;
   const puede    = firmados > 0 && firmados === vigs.length;
   const negativas= vigs.filter(v => firmas[v.id]?.nego);
 
@@ -2342,9 +2585,26 @@ function Step5({ rd, setRD, onGuardar, onBack, guardando }) {
             </div>
 
             {f.nego ? (
-              <div className="clay-inset py-9 flex flex-col items-center gap-2">
-                <Icon name="x-circle" size={30} className="text-bad" />
-                <p className="text-[12px] font-black text-bad-ink">Negativa a firmar registrada</p>
+              <div className="flex flex-col gap-3">
+                <div className="clay-inset py-7 flex flex-col items-center gap-2">
+                  <Icon name="x-circle" size={30} className="text-bad" />
+                  <p className="text-[12px] font-black text-bad-ink">Negativa a firmar registrada</p>
+                </div>
+                <Textarea label="Motivo declarado por el vigilador" value={f.motivoNegativa || ""}
+                  onChange={e => setMotivoNegativa(v.id, e.target.value)} rows={3}
+                  placeholder="Describí lo que el vigilador manifestó como motivo…"
+                  hint={<p className="text-[10px] text-ink-faint mt-1.5">Mínimo 5 caracteres.</p>} />
+                <label className="clay-press flex items-start gap-2.5 px-3.5 py-3 rounded-[15px] clay-sm cursor-pointer">
+                  <span className={cx("w-4.5 h-4.5 rounded-md flex items-center justify-center shrink-0 border-2 mt-px",
+                    f.avisoRegistrado ? "bg-brand-600 border-brand-600 text-white" : "border-slate-300")} style={{ width:18, height:18 }}>
+                    {f.avisoRegistrado && <Icon name="check" size={11} strokeWidth={3.5} />}
+                  </span>
+                  <input type="checkbox" className="hidden" checked={Boolean(f.avisoRegistrado)}
+                    onChange={e => setAvisoRegistrado(v.id, e.target.checked)} />
+                  <span className="text-[11px] font-semibold text-ink-soft leading-snug">
+                    Le expliqué que la negativa a firmar queda registrada en el acta.
+                  </span>
+                </label>
               </div>
             ) : (
               <CanvasFirma onChange={d => setFirma(v.id, d)} disabled={false} />
@@ -2493,7 +2753,7 @@ function ActaGenerada({ rd, resultado, supervisor, onNueva }) {
                       <Badge tone={f.nego ? "bad" : "good"}>{f.nego ? "No firmó" : "Firmado"}</Badge>
                     </div>
                     {f.dataUrl
-                      ? <div className="bg-white rounded-[12px] p-1"><img src={f.dataUrl} alt={`Firma de ${v.nombre}`} className="w-full h-16 object-contain" /></div>
+                      ? <div className="bg-white rounded-[12px] p-1"><img src={f.dataUrl} alt={`Firma de ${v.nombre}`} className="w-full h-16 object-contain" loading="lazy" /></div>
                       : <div className="bg-white rounded-[12px] h-16 flex items-center justify-center">
                           <p className="text-[10px] font-bold text-bad-ink">Negativa registrada · ticket a RRHH</p>
                         </div>}
@@ -2571,7 +2831,7 @@ function ActaGenerada({ rd, resultado, supervisor, onNueva }) {
                 <Label className="mb-2">Evidencia fotográfica</Label>
                 <div className="grid grid-cols-3 gap-2">
                   {rd.fotos.map((f, i) => (
-                    <img key={i} src={f.dataUrl} alt={`Evidencia ${i + 1}`} className="w-full h-20 object-cover rounded-[12px]" />
+                    <img key={i} src={f.dataUrl} alt={`Evidencia ${i + 1}`} className="w-full h-20 object-cover rounded-[12px]" loading="lazy" />
                   ))}
                 </div>
               </div>
@@ -2633,6 +2893,7 @@ function SupervisorPanel() {
   const [res,  setRes]  = useState(null);
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef(null);
+  const guardandoRef = useRef(false); // guard sincrónico: setBusy/disabled tardan un render en aplicarse
 
   const supervisor = currentUser?.nombre || "Supervisor";
 
@@ -2640,10 +2901,17 @@ function SupervisorPanel() {
   const reiniciar = () => { setRD({}); setRes(null); ir(0); };
 
   const guardar = async () => {
+    if (guardandoRef.current) return;
+    guardandoRef.current = true;
     setBusy(true);
-    const r = await guardarRonda(rd, supervisor);
-    setRes(r); setBusy(false);
-    scrollRef.current?.scrollTo({ top:0, behavior:"smooth" });
+    try {
+      const r = await guardarRonda(rd, supervisor);
+      setRes(r);
+    } finally {
+      setBusy(false);
+      guardandoRef.current = false;
+      scrollRef.current?.scrollTo({ top:0, behavior:"smooth" });
+    }
   };
 
   const pantallas = [
@@ -2670,9 +2938,39 @@ function SupervisorPanel() {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   PANEL ADMINISTRATIVO — gestión de incidencias
+   ADMIN — navegación entre secciones
 ═══════════════════════════════════════════════════════════ */
-function AdminPanel() {
+const ADMIN_SECCIONES = [
+  { key:"incidencias",   label:"Incidencias",   icon:"ticket" },
+  { key:"actas",         label:"Actas",         icon:"file" },
+  { key:"objetivos",     label:"Objetivos",     icon:"target" },
+  { key:"checklists",    label:"Checklists",    icon:"clipboard" },
+  { key:"vigiladores",   label:"Vigiladores",   icon:"users" },
+  { key:"planificacion", label:"Planificación", icon:"calendar" },
+];
+
+function SidebarNav({ seccion, onChange }) {
+  return (
+    <div className="shrink-0 md:w-52 md:shrink-0">
+      {/* Mobile: fila de chips con scroll horizontal. Desktop: columna fija. */}
+      <div className="flex md:flex-col gap-2 overflow-x-auto md:overflow-visible px-4 md:px-0 pb-2.5 md:pb-0">
+        {ADMIN_SECCIONES.map(s => (
+          <button key={s.key} onClick={() => onChange(s.key)}
+            className={cx("clay-btn shrink-0 md:w-full flex items-center gap-2 px-3.5 py-2.5 md:py-3 rounded-[15px] text-[11px] font-black transition-all",
+              seccion === s.key ? "bg-plum text-white" : "bg-white text-ink-mute")}>
+            <Icon name={s.icon} size={15} />
+            {s.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ADMIN — Incidencias (bandeja con SLA)
+═══════════════════════════════════════════════════════════ */
+function AdminIncidencias() {
   const { ticketsActivos, cerrarTicket, apiStatus, apiFetch, currentUser } = useApp();
   const [apiTickets, setApiTickets] = useState(null);
   const [cargando,   setCargando]   = useState(false);
@@ -2682,24 +2980,57 @@ function AdminPanel() {
   const [resol,      setResol]      = useState("");
   const [cerrando,   setCerrando]   = useState(false);
 
+  const [usuarios, setUsuarios] = useState([]);
+  const [asignando, setAsignando] = useState(false);
+
   const conApi  = apiStatus === "connected" && apiTickets !== null;
   const tickets = conApi ? apiTickets : ticketsActivos;
 
   useEffect(() => {
     if (apiStatus !== "connected") { setApiTickets(null); return; }
     setCargando(true);
-    apiFetch("/api/tickets?limite=100").then(r => r.json()).then(d => {
+    apiFetch("/api/tickets?limite=100&orden=urgencia").then(r => r.json()).then(d => {
       if (!d.ok) return;
       setApiTickets(d.tickets.map(t => ({
         id: t.codigo_ticket, _dbId: t.id, obj: t.objetivo, sup: t.supervisor,
         val: t.valoracion || "R", area: t.area_responsable, item: t.item_titulo,
         vig: t.vigilador, estado: t.estado === "ABIERTO" ? "Activo" : "Cerrado",
         desc: t.descripcion, resolucion: t.resolucion,
+        severidad: t.severidad, slaVencido: t.sla_vencido, slaVenceHoy: t.sla_vence_hoy,
+        asignadoA: t.asignado_a, asignadoNombre: t.asignado_nombre, reincidencias: t.reincidencias_90d,
         fecha: new Date(t.fecha_creacion).toLocaleString("es-AR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }),
         isNew: false,
       })));
     }).catch(e => console.warn("[tickets]", e.message)).finally(() => setCargando(false));
+
+    apiFetch("/api/usuarios?rol=admin").then(r => r.json()).then(d => { if (d.ok) setUsuarios(d.usuarios); }).catch(() => {});
   }, [apiStatus]);
+
+  const [rechazando,    setRechazando]    = useState(false);
+  const [motivoRechazo, setMotivoRechazo] = useState("");
+  const [procesando,    setProcesando]    = useState(false);
+
+  const asignar = async (a_usuario_id) => {
+    if (!actual?._dbId) return;
+    setAsignando(true);
+    const endpoint = actual.asignadoA ? "reasignar" : "asignar";
+    try {
+      await apiFetch(`/api/tickets/${actual._dbId}/${endpoint}`, { method:"PATCH", body: JSON.stringify({ a_usuario_id }) });
+      const u = usuarios.find(u => u.id === a_usuario_id);
+      setApiTickets(ts => ts.map(t => t.id === actual.id ? { ...t, asignadoA: a_usuario_id, asignadoNombre: u?.nombre } : t));
+    } catch (e) { console.warn("[asignar]", e.message); }
+    setAsignando(false);
+  };
+
+  const confirmarRechazo = async () => {
+    if (!actual?._dbId || motivoRechazo.trim().length < 10) return;
+    setProcesando(true);
+    try {
+      await apiFetch(`/api/tickets/${actual._dbId}/rechazar`, { method:"PATCH", body: JSON.stringify({ motivo: motivoRechazo }) });
+      setApiTickets(ts => ts.map(t => t.id === actual.id ? { ...t, estado:"Cerrado", resolucion: `Rechazada: ${motivoRechazo}` } : t));
+    } catch (e) { console.warn("[rechazar]", e.message); }
+    setProcesando(false); setRechazando(false); setMotivoRechazo(""); setSel(null);
+  };
 
   const stats = {
     crit: tickets.filter(t => t.val === "M" && t.estado === "Activo").length,
@@ -2733,53 +3064,58 @@ function AdminPanel() {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <PanelHeader icon="clipboard" rol="Gestión de incidencias" nombre={currentUser?.nombre || "Administración"} tone="plum" />
-      <ConnBar />
-      <SyncToast />
-
+    <>
       {/* Contadores */}
-      <div className="flex gap-2 px-4 pb-2.5 shrink-0">
+      <div className="flex gap-2 md:gap-3 px-4 md:px-6 pb-2.5 md:pb-4 shrink-0">
         {[["Críticas", stats.crit, "bad"], ["Activas", stats.act, "warn"], ["Cerradas", stats.cer, "good"]].map(([l, v, tone]) => (
-          <Clay key={l} className="flex-1 p-3 text-center">
-            <p className={cx("text-2xl font-black tnum leading-none",
+          <Clay key={l} className="flex-1 p-3 md:p-5 text-center">
+            <p className={cx("text-2xl md:text-3xl font-black tnum leading-none",
               tone === "bad" ? "text-bad" : tone === "warn" ? "text-warn" : "text-good")}>{v}</p>
-            <p className="text-[10px] font-bold text-ink-mute mt-1">{l}</p>
+            <p className="text-[10px] md:text-xs font-bold text-ink-mute mt-1">{l}</p>
           </Clay>
         ))}
       </div>
 
-      <div className="px-4 pb-2 shrink-0">
-        <Segmented tone="plum" value={filtro} onChange={setFiltro}
-          options={[["activo","Activas",stats.act],["cerrado","Cerradas",stats.cer],["todas","Todas",tickets.length]]} />
+      {/* En mobile el segmentado y el filtro por área van apilados; en
+          tablet/desktop pasan a la misma fila (side-by-side). */}
+      <div className="md:flex md:items-center md:gap-4 md:px-6 shrink-0">
+        <div className="px-4 md:px-0 pb-2 md:pb-2.5 shrink-0 md:w-72">
+          <Segmented tone="plum" value={filtro} onChange={setFiltro}
+            options={[["activo","Activas",stats.act],["cerrado","Cerradas",stats.cer],["todas","Todas",tickets.length]]} />
+        </div>
+
+        {/* Filtro por área */}
+        {Object.keys(areas).length > 0 && (
+          <div className="flex gap-2 overflow-x-auto px-4 md:px-0 pb-2.5 shrink-0 md:flex-1">
+            <button onClick={() => setArea("todas")}
+              className={cx("clay-btn shrink-0 px-3 py-2 rounded-full text-[10px] font-black",
+                area === "todas" ? "bg-plum text-white" : "bg-white text-ink-mute")}>Todas</button>
+            {Object.entries(areas).map(([a, n]) => (
+              <button key={a} onClick={() => setArea(a)}
+                className={cx("clay-btn shrink-0 px-3 py-2 rounded-full text-[10px] font-black whitespace-nowrap",
+                  area === a ? "bg-plum text-white" : "bg-white text-ink-mute")}>
+                {a} <span className="tnum opacity-70">{n}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Filtro por área */}
-      {Object.keys(areas).length > 0 && (
-        <div className="flex gap-2 overflow-x-auto px-4 pb-2.5 shrink-0">
-          <button onClick={() => setArea("todas")}
-            className={cx("clay-btn shrink-0 px-3 py-2 rounded-full text-[10px] font-black",
-              area === "todas" ? "bg-plum text-white" : "bg-white text-ink-mute")}>Todas</button>
-          {Object.entries(areas).map(([a, n]) => (
-            <button key={a} onClick={() => setArea(a)}
-              className={cx("clay-btn shrink-0 px-3 py-2 rounded-full text-[10px] font-black whitespace-nowrap",
-                area === a ? "bg-plum text-white" : "bg-white text-ink-mute")}>
-              {a} <span className="tnum opacity-70">{n}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="scroll-y flex-1 px-4 pb-5 flex flex-col gap-2.5">
+      {/* Lista de tickets: una columna en el teléfono, grilla tipo tabla
+          de 2 columnas en tablet y 3 en desktop — más incidencias visibles
+          de un vistazo sin dejar de ser tarjetas Clay. */}
+      <div className="scroll-y flex-1 px-4 md:px-6 pb-5 flex flex-col gap-2.5 md:grid md:grid-cols-2 md:items-start md:gap-3 lg:grid-cols-3">
         {cargando && [0,1,2].map(i => <Skeleton key={i} h={112} />)}
 
         {!cargando && lista.length === 0 && (
-          <Empty icon="check-circle" title="Sin incidencias acá" sub="No hay tickets que coincidan con este filtro." />
+          <div className="md:col-span-full">
+            <Empty icon="check-circle" title="Sin incidencias acá" sub="No hay tickets que coincidan con este filtro." />
+          </div>
         )}
 
         {!cargando && lista.map((t, i) => (
           <button key={t.id} onClick={() => { setSel(t); setResol(""); }}
-            className="clay clay-press w-full text-left p-4 a-up focus-ring" style={{ animationDelay:`${i * 45}ms` }}>
+            className="clay clay-press w-full text-left p-4 md:p-5 a-up focus-ring" style={{ animationDelay:`${i * 45}ms` }}>
             <div className="flex items-center justify-between gap-2 mb-2">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-[10px] font-mono font-black text-ink-mute">{t.id}</span>
@@ -2796,6 +3132,14 @@ function AdminPanel() {
                 <Icon name="clipboard" size={12} className="text-ink-faint" />
                 <span className="text-[10px] text-ink-faint font-semibold">{t.item}</span>
                 <Badge tone={t.val === "M" ? "bad" : "warn"} className="ml-auto">{VALOR[t.val]?.label || t.val}</Badge>
+              </div>
+            )}
+            {t.estado === "Activo" && (t.slaVencido || t.slaVenceHoy || t.reincidencias > 0 || t.asignadoNombre) && (
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                {t.slaVencido    && <Badge tone="bad"  icon="clock">SLA vencido</Badge>}
+                {!t.slaVencido && t.slaVenceHoy && <Badge tone="warn" icon="clock">Vence hoy</Badge>}
+                {t.reincidencias > 0 && <Badge tone="plum" icon="refresh">Reincide ×{t.reincidencias}</Badge>}
+                {t.asignadoNombre ? <Badge tone="brand" icon="user">{t.asignadoNombre}</Badge> : <Badge tone="gray" icon="user">Sin asignar</Badge>}
               </div>
             )}
             <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
@@ -2830,13 +3174,53 @@ function AdminPanel() {
 
             {actual.estado === "Activo" ? (
               <>
-                <Textarea label="Resolución técnica" value={resol} onChange={e => setResol(e.target.value)} rows={4}
-                  placeholder="Describí la acción concreta que resolvió esta incidencia…"
-                  hint={<p className="text-[10px] text-ink-faint mt-1.5">Mínimo 5 caracteres.</p>} />
-                <Btn full size="lg" variant="success" icon="check-circle" loading={cerrando}
-                  disabled={resol.trim().length < 5} onClick={confirmarCierre}>
-                  Cerrar incidencia
-                </Btn>
+                {conApi && usuarios.length > 0 && (
+                  <Clay className="p-3.5">
+                    <Label className="mb-2">{actual.asignadoNombre ? "Reasignar a" : "Asignar a"}</Label>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {usuarios.map(u => (
+                        <button key={u.id} disabled={asignando} onClick={() => asignar(u.id)}
+                          className={cx("clay-btn px-3 py-2 rounded-full text-[10px] font-black transition-all",
+                            actual.asignadoA === u.id ? "bg-brand-600 text-white" : "bg-white text-ink-mute")}>
+                          {u.nombre} <span className="tnum opacity-70">({u.carga_actual})</span>
+                        </button>
+                      ))}
+                    </div>
+                    {actual.asignadoNombre && (
+                      <p className="text-[10px] text-ink-faint mt-2">El SLA no se reinicia al reasignar.</p>
+                    )}
+                  </Clay>
+                )}
+
+                {rechazando ? (
+                  <Clay className="p-3.5 flex flex-col gap-2.5">
+                    <Textarea label="Motivo del rechazo o duplicado" value={motivoRechazo}
+                      onChange={e => setMotivoRechazo(e.target.value)} rows={3}
+                      placeholder="Explicá por qué se rechaza o a qué incidencia duplica…"
+                      hint={<p className="text-[10px] text-ink-faint mt-1.5">Mínimo 10 caracteres. Se notifica al supervisor.</p>} />
+                    <div className="flex gap-2">
+                      <Btn variant="white" onClick={() => setRechazando(false)} className="px-4">Cancelar</Btn>
+                      <Btn full variant="danger" icon="x-circle" loading={procesando}
+                        disabled={motivoRechazo.trim().length < 10} onClick={confirmarRechazo}>
+                        Confirmar rechazo
+                      </Btn>
+                    </div>
+                  </Clay>
+                ) : (
+                  <>
+                    <Textarea label="Resolución técnica" value={resol} onChange={e => setResol(e.target.value)} rows={4}
+                      placeholder="Contá qué se hizo. Esto lo lee el cliente y el supervisor…"
+                      hint={<p className="text-[10px] text-ink-faint mt-1.5">Mínimo 30 caracteres.</p>} />
+                    <Btn full size="lg" variant="success" icon="check-circle" loading={cerrando}
+                      disabled={resol.trim().length < 30} onClick={confirmarCierre}>
+                      Resolver incidencia
+                    </Btn>
+                    <button onClick={() => setRechazando(true)}
+                      className="text-[11px] font-black text-bad-ink text-center py-1 focus-ring rounded">
+                      Rechazar o marcar como duplicada
+                    </button>
+                  </>
+                )}
               </>
             ) : (
               <div className="bg-good-soft rounded-[16px] px-4 py-3.5">
@@ -2850,6 +3234,39 @@ function AdminPanel() {
           </div>
         )}
       </Sheet>
+    </>
+  );
+}
+
+function AdminPanel() {
+  const { currentUser } = useApp();
+  const [seccion, setSeccion] = useState("incidencias");
+  const activa = ADMIN_SECCIONES.find(s => s.key === seccion);
+
+  return (
+    <div className="flex flex-col h-full">
+      <PanelHeader icon="clipboard" rol="Panel administrativo" nombre={currentUser?.nombre || "Administración"} tone="plum" />
+      <ConnBar />
+      <SyncToast />
+
+      <div className="flex-1 min-h-0 md:flex md:gap-4 md:px-6 md:pb-5">
+        <SidebarNav seccion={seccion} onChange={setSeccion} />
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+          {seccion === "incidencias" ? (
+            <AdminIncidencias />
+          ) : (
+            <div className="scroll-y flex-1 px-4 md:px-0 pb-5">
+              <Clay className="p-6 md:p-8 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-plum-soft text-plum mx-auto mb-3 flex items-center justify-center">
+                  <Icon name={activa?.icon || "clipboard"} size={23} />
+                </div>
+                <p className="text-[16px] font-black text-ink">{activa?.label}</p>
+                <p className="text-[12px] text-ink-mute mt-1.5">Esta sección todavía no tiene una interfaz administrativa disponible.</p>
+              </Clay>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2883,6 +3300,8 @@ function OwnerPanel() {
         criticas:    k.tickets.criticos, activas: k.tickets.abiertos, cerradas: k.tickets.cerrados,
         porArea:     k.tickets.por_area, diasProm: k.tickets.dias_promedio_resolucion,
         rondas:      k.rondas, porTipo, porObjetivo,
+        objetivosEnRiesgo: k.objetivos_en_riesgo || [],
+        reincidencias:     k.reincidencias || [],
       });
     }).catch(e => console.warn("[kpis]", e.message));
 
@@ -2910,10 +3329,10 @@ function OwnerPanel() {
       <ConnBar />
       <SyncToast />
 
-      <div className="scroll-y flex-1 px-4 pb-5 flex flex-col gap-3.5">
+      <div className="scroll-y flex-1 px-4 md:px-6 pb-5 flex flex-col gap-3.5">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-black text-ink capitalize leading-tight">
+            <h2 className="text-lg md:text-xl font-black text-ink capitalize leading-tight">
               {new Date().toLocaleDateString("es-AR", { month:"long", year:"numeric" })}
             </h2>
             <p className="text-[11px] text-ink-mute">Ciclo mensual de cumplimiento</p>
@@ -2924,144 +3343,212 @@ function OwnerPanel() {
           </div>
         </div>
 
-        {/* Cobertura de visitas */}
-        <Clay className="p-4">
-          <Label className="mb-3">Cobertura de visitas mensuales</Label>
-          <div className="flex items-center gap-4">
-            <Ring value={k.visitas} max={k.metaVisitas} color="#2563eb" size={118} label={`${k.visitas} de ${k.metaVisitas}`} />
-            <div className="flex-1 min-w-0">
-              <p className="text-[42px] font-black text-ink tnum leading-none">{pct}<span className="text-xl text-brand-500">%</span></p>
-              <p className="text-xs text-ink-mute mt-1 leading-snug">{k.visitas} visitas realizadas<br />sobre {k.metaVisitas} planificadas</p>
-              {k.rondas && (
-                <div className="flex gap-1.5 mt-2.5">
-                  <Badge tone="good">{k.rondas.presenciales} presenciales</Badge>
-                  <Badge tone="warn">{k.rondas.remotas} remotas</Badge>
+        {/* En el teléfono, todo baja en una sola columna en este mismo
+            orden. En tablet/desktop se reparte en dos columnas lado a
+            lado: cobertura/incidencias/tiempo de resolución a la
+            izquierda, cumplimiento/áreas/actividad a la derecha. */}
+        <div className="flex flex-col gap-3.5 md:grid md:grid-cols-2 md:gap-4 md:items-start">
+          <div className="flex flex-col gap-3.5">
+            {/* Cobertura de visitas */}
+            <Clay className="p-4 md:p-5">
+              <Label className="mb-3">Cobertura de visitas mensuales</Label>
+              <div className="flex items-center gap-4">
+                <Ring value={k.visitas} max={k.metaVisitas} color="#2563eb" size={118} label={`${k.visitas} de ${k.metaVisitas}`} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[42px] font-black text-ink tnum leading-none">{pct}<span className="text-xl text-brand-500">%</span></p>
+                  <p className="text-xs text-ink-mute mt-1 leading-snug">{k.visitas} visitas realizadas<br />sobre {k.metaVisitas} planificadas</p>
+                  {k.rondas && (
+                    <div className="flex gap-1.5 mt-2.5">
+                      <Badge tone="good">{k.rondas.presenciales} presenciales</Badge>
+                      <Badge tone="warn">{k.rondas.remotas} remotas</Badge>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Clay>
+
+            {/* Incidencias */}
+            <div className="flex gap-2.5">
+              <Clay className="flex-1 p-4" tint={k.criticas > 0 ? "linear-gradient(135deg,#fff1f2,#ffe4e6)" : "linear-gradient(135deg,#ecfdf5,#d1fae5)"}>
+                <Label className={k.criticas > 0 ? "text-bad-ink" : "text-good-ink"}>Críticas</Label>
+                <p className={cx("text-[40px] font-black tnum leading-none mt-1", k.criticas > 0 ? "text-bad" : "text-good")}>{k.criticas}</p>
+                <p className={cx("text-[10px] font-bold mt-1", k.criticas > 0 ? "text-bad-ink" : "text-good-ink")}>
+                  {k.criticas > 0 ? "requieren atención" : "todo en orden"}
+                </p>
+              </Clay>
+              <div className="flex-1 flex flex-col gap-2.5">
+                <Clay className="p-3.5">
+                  <p className="text-2xl font-black text-warn tnum leading-none">{k.activas}</p>
+                  <p className="text-[10px] font-bold text-ink-mute mt-1">Tickets activos</p>
+                </Clay>
+                <Clay className="p-3.5">
+                  <p className="text-2xl font-black text-good tnum leading-none">{k.cerradas}</p>
+                  <p className="text-[10px] font-bold text-ink-mute mt-1">Resueltos</p>
+                </Clay>
+              </div>
+            </div>
+
+            {k.diasProm > 0 && (
+              <Clay className="p-3.5 flex items-center gap-3">
+                <span className="w-10 h-10 rounded-[14px] bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
+                  <Icon name="clock" size={19} />
+                </span>
+                <div>
+                  <p className="text-[13px] font-black text-ink tnum">{k.diasProm} días</p>
+                  <p className="text-[10px] text-ink-mute">Tiempo promedio de resolución</p>
+                </div>
+              </Clay>
+            )}
+
+            {/* Objetivos en riesgo — incumplen frecuencia Y tienen incidencias abiertas (7a) */}
+            {(k.objetivosEnRiesgo || []).length > 0 && (
+              <Clay className="p-4" tint="linear-gradient(135deg,#fff7ed,#ffedd5)">
+                <div className="flex items-center gap-2 mb-2.5">
+                  <Icon name="alert" size={16} className="text-tang-ink" />
+                  <p className="text-[12px] font-black text-tang-ink">
+                    {k.objetivosEnRiesgo.length} objetivo{k.objetivosEnRiesgo.length > 1 ? "s" : ""} en riesgo
+                  </p>
+                </div>
+                <p className="text-[10px] text-ink-faint mb-2.5">Incumplen frecuencia y tienen incidencias abiertas.</p>
+                <div className="flex flex-col gap-1.5">
+                  {k.objetivosEnRiesgo.slice(0, 5).map(o => (
+                    <div key={o.id || o.nombre} className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-ink-soft truncate">{o.nombre}</span>
+                      <span className="text-[10px] text-ink-faint tnum shrink-0">
+                        {o.rondas_realizadas ?? o.realizadas}/{o.visitas_meta_mes}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </Clay>
+            )}
+
+            {/* Reincidencia — mismo ítem, mismo objetivo, últimos 90 días */}
+            {(k.reincidencias || []).length > 0 && (
+              <Clay className="p-4">
+                <div className="flex items-center gap-2 mb-2.5">
+                  <Icon name="refresh" size={16} className="text-plum" />
+                  <p className="text-[12px] font-black text-ink">Se repite, no se resuelve</p>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {k.reincidencias.slice(0, 5).map((r, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-ink-soft truncate">{r.item_titulo} · {r.objetivo}</span>
+                      <Badge tone="plum">×{r.repeticiones}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </Clay>
+            )}
+
+            {k.rondas?.mes_anterior != null && (
+              <Clay className="p-3.5 flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] font-bold text-ink-mute">vs. mes anterior</p>
+                  <p className="text-[10px] text-ink-faint">{k.rondas.mes_anterior} rondas el mes pasado</p>
+                </div>
+                {(() => {
+                  const delta = k.rondas.total_mes - k.rondas.mes_anterior;
+                  return (
+                    <Badge tone={delta >= 0 ? "good" : "bad"} icon={delta >= 0 ? "trending" : "alert"}>
+                      {delta >= 0 ? "+" : ""}{delta} rondas
+                    </Badge>
+                  );
+                })()}
+              </Clay>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-3.5">
+            {/* Cumplimiento */}
+            <Clay className="p-4 md:p-5">
+              <div className="flex items-center justify-between mb-3">
+                <Label>Cumplimiento</Label>
+                <div className="clay-inset flex gap-1 p-1">
+                  {[["tipo","Por tipo"],["obj","Por objetivo"]].map(([kk, l]) => (
+                    <button key={kk} onClick={() => setTab(kk)}
+                      className={cx("px-2.5 py-1 rounded-[10px] text-[10px] font-black transition-all",
+                        tab === kk ? "bg-brand-600 text-white" : "text-ink-mute")}>{l}</button>
+                  ))}
+                </div>
+              </div>
+
+              {tab === "tipo" ? (
+                <div className="flex flex-col gap-3.5">
+                  {Object.entries(k.porTipo || {}).map(([tipo, d]) => {
+                    const p = d.total ? Math.round(d.completadas / d.total * 100) : 0;
+                    return (
+                      <div key={tipo}>
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-[12px] font-bold text-ink-soft">{tipo}</span>
+                          <span className="text-[11px] text-ink-mute tnum">
+                            {d.completadas}/{d.total} · <span className="font-black text-ink">{p}%</span>
+                          </span>
+                        </div>
+                        <Bar value={d.completadas} max={d.total || 1} color={TIPO_COLOR[tipo] || "#3b82f6"} height={9} />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {(k.porObjetivo || []).map(o => {
+                    const meta = o.visitas_meta_mes || 0;
+                    const p = meta ? Math.round(o.realizadas / meta * 100) : 0;
+                    return (
+                      <div key={o.id}>
+                        <div className="flex justify-between items-center gap-2 mb-1.5">
+                          <span className="text-[11px] font-bold text-ink-soft truncate flex-1">{o.nombre}</span>
+                          <span className="text-[10px] text-ink-mute tnum shrink-0">{o.realizadas}/{meta}</span>
+                        </div>
+                        <Bar value={o.realizadas} max={meta || 1} color={p >= 100 ? "#10b981" : p >= 60 ? "#3b82f6" : "#f59e0b"} height={7} />
+                      </div>
+                    );
+                  })}
                 </div>
               )}
-            </div>
-          </div>
-        </Clay>
-
-        {/* Incidencias */}
-        <div className="flex gap-2.5">
-          <Clay className="flex-1 p-4" tint={k.criticas > 0 ? "linear-gradient(135deg,#fff1f2,#ffe4e6)" : "linear-gradient(135deg,#ecfdf5,#d1fae5)"}>
-            <Label className={k.criticas > 0 ? "text-bad-ink" : "text-good-ink"}>Críticas</Label>
-            <p className={cx("text-[40px] font-black tnum leading-none mt-1", k.criticas > 0 ? "text-bad" : "text-good")}>{k.criticas}</p>
-            <p className={cx("text-[10px] font-bold mt-1", k.criticas > 0 ? "text-bad-ink" : "text-good-ink")}>
-              {k.criticas > 0 ? "requieren atención" : "todo en orden"}
-            </p>
-          </Clay>
-          <div className="flex-1 flex flex-col gap-2.5">
-            <Clay className="p-3.5">
-              <p className="text-2xl font-black text-warn tnum leading-none">{k.activas}</p>
-              <p className="text-[10px] font-bold text-ink-mute mt-1">Tickets activos</p>
             </Clay>
-            <Clay className="p-3.5">
-              <p className="text-2xl font-black text-good tnum leading-none">{k.cerradas}</p>
-              <p className="text-[10px] font-bold text-ink-mute mt-1">Resueltos</p>
+
+            {/* Tickets por área */}
+            {k.porArea?.length > 0 && (
+              <Clay className="p-4">
+                <Label className="mb-3">Tickets abiertos por área</Label>
+                <div className="flex flex-col gap-2">
+                  {k.porArea.map(a => (
+                    <div key={a.area_responsable} className="flex items-center gap-2.5">
+                      <Badge tone={AREA_THEME[a.area_responsable]?.tone || "gray"}>{a.area_responsable}</Badge>
+                      <div className="flex-1"><Bar value={parseInt(a.cantidad)} max={Math.max(...k.porArea.map(x => parseInt(x.cantidad)))} color="#8b5cf6" height={7} /></div>
+                      <span className="text-[11px] font-black text-ink tnum w-4 text-right">{a.cantidad}</span>
+                    </div>
+                  ))}
+                </div>
+              </Clay>
+            )}
+
+            {/* Feed en vivo */}
+            <Clay className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <Label>Actividad en tiempo real</Label>
+                <div className="flex items-center gap-1.5"><Dot tone="good" pulse /><span className="text-[10px] font-black text-good-ink">Live</span></div>
+              </div>
+              {feed.length === 0
+                ? <Empty icon="activity" title="Sin actividad" sub="Las rondas aparecerán acá al guardarse." />
+                : feed.map((a, i) => (
+                  <div key={i} className={cx("flex items-center gap-2.5 py-2.5", i < feed.length - 1 && "border-b border-slate-100")}>
+                    <span className="text-[10px] text-ink-faint font-mono w-9 shrink-0 tnum">{a.hora}</span>
+                    <Dot tone={a.tipo === "Presencial" ? "good" : "warn"} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-bold text-ink truncate">
+                        {a.isNew && <span className="text-brand-600">● </span>}{a.sup} → {a.obj}
+                      </p>
+                      <p className="text-[10px] text-ink-faint">{a.isNew ? "Recién · " : ""}{a.tipo}{!a.ok ? " · con incidencia" : ""}</p>
+                    </div>
+                    <Icon name={a.ok ? "check-circle" : "alert"} size={15} className={a.ok ? "text-good" : "text-warn"} />
+                  </div>
+                ))}
             </Clay>
           </div>
         </div>
-
-        {k.diasProm > 0 && (
-          <Clay className="p-3.5 flex items-center gap-3">
-            <span className="w-10 h-10 rounded-[14px] bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
-              <Icon name="clock" size={19} />
-            </span>
-            <div>
-              <p className="text-[13px] font-black text-ink tnum">{k.diasProm} días</p>
-              <p className="text-[10px] text-ink-mute">Tiempo promedio de resolución</p>
-            </div>
-          </Clay>
-        )}
-
-        {/* Cumplimiento */}
-        <Clay className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <Label>Cumplimiento</Label>
-            <div className="clay-inset flex gap-1 p-1">
-              {[["tipo","Por tipo"],["obj","Por objetivo"]].map(([kk, l]) => (
-                <button key={kk} onClick={() => setTab(kk)}
-                  className={cx("px-2.5 py-1 rounded-[10px] text-[10px] font-black transition-all",
-                    tab === kk ? "bg-brand-600 text-white" : "text-ink-mute")}>{l}</button>
-              ))}
-            </div>
-          </div>
-
-          {tab === "tipo" ? (
-            <div className="flex flex-col gap-3.5">
-              {Object.entries(k.porTipo || {}).map(([tipo, d]) => {
-                const p = d.total ? Math.round(d.completadas / d.total * 100) : 0;
-                return (
-                  <div key={tipo}>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <span className="text-[12px] font-bold text-ink-soft">{tipo}</span>
-                      <span className="text-[11px] text-ink-mute tnum">
-                        {d.completadas}/{d.total} · <span className="font-black text-ink">{p}%</span>
-                      </span>
-                    </div>
-                    <Bar value={d.completadas} max={d.total || 1} color={TIPO_COLOR[tipo] || "#3b82f6"} height={9} />
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {(k.porObjetivo || []).map(o => {
-                const meta = o.visitas_meta_mes || 0;
-                const p = meta ? Math.round(o.realizadas / meta * 100) : 0;
-                return (
-                  <div key={o.id}>
-                    <div className="flex justify-between items-center gap-2 mb-1.5">
-                      <span className="text-[11px] font-bold text-ink-soft truncate flex-1">{o.nombre}</span>
-                      <span className="text-[10px] text-ink-mute tnum shrink-0">{o.realizadas}/{meta}</span>
-                    </div>
-                    <Bar value={o.realizadas} max={meta || 1} color={p >= 100 ? "#10b981" : p >= 60 ? "#3b82f6" : "#f59e0b"} height={7} />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Clay>
-
-        {/* Tickets por área */}
-        {k.porArea?.length > 0 && (
-          <Clay className="p-4">
-            <Label className="mb-3">Tickets abiertos por área</Label>
-            <div className="flex flex-col gap-2">
-              {k.porArea.map(a => (
-                <div key={a.area_responsable} className="flex items-center gap-2.5">
-                  <Badge tone={AREA_THEME[a.area_responsable]?.tone || "gray"}>{a.area_responsable}</Badge>
-                  <div className="flex-1"><Bar value={parseInt(a.cantidad)} max={Math.max(...k.porArea.map(x => parseInt(x.cantidad)))} color="#8b5cf6" height={7} /></div>
-                  <span className="text-[11px] font-black text-ink tnum w-4 text-right">{a.cantidad}</span>
-                </div>
-              ))}
-            </div>
-          </Clay>
-        )}
-
-        {/* Feed en vivo */}
-        <Clay className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <Label>Actividad en tiempo real</Label>
-            <div className="flex items-center gap-1.5"><Dot tone="good" pulse /><span className="text-[10px] font-black text-good-ink">Live</span></div>
-          </div>
-          {feed.length === 0
-            ? <Empty icon="activity" title="Sin actividad" sub="Las rondas aparecerán acá al guardarse." />
-            : feed.map((a, i) => (
-              <div key={i} className={cx("flex items-center gap-2.5 py-2.5", i < feed.length - 1 && "border-b border-slate-100")}>
-                <span className="text-[10px] text-ink-faint font-mono w-9 shrink-0 tnum">{a.hora}</span>
-                <Dot tone={a.tipo === "Presencial" ? "good" : "warn"} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-bold text-ink truncate">
-                    {a.isNew && <span className="text-brand-600">● </span>}{a.sup} → {a.obj}
-                  </p>
-                  <p className="text-[10px] text-ink-faint">{a.isNew ? "Recién · " : ""}{a.tipo}{!a.ok ? " · con incidencia" : ""}</p>
-                </div>
-                <Icon name={a.ok ? "check-circle" : "alert"} size={15} className={a.ok ? "text-good" : "text-warn"} />
-              </div>
-            ))}
-        </Clay>
 
         <p className="text-center text-[10px] text-ink-faint pb-1">ASI · Sistema de Supervisión v3.0</p>
       </div>
@@ -3072,24 +3559,33 @@ function OwnerPanel() {
 /* ═══════════════════════════════════════════════════════════
    MARCO DE TELÉFONO
 ═══════════════════════════════════════════════════════════ */
-function PhoneFrame({ children }) {
+const isNativeApp = typeof window !== "undefined" &&
+  !!window.Capacitor && (window.Capacitor.isNativePlatform ? window.Capacitor.isNativePlatform() : true);
+
+function PhoneFrame({ children, wide = false }) {
   const { offline } = useApp();
   const [t, setT] = useState(new Date());
   useEffect(() => { const i = setInterval(() => setT(new Date()), 20000); return () => clearInterval(i); }, []);
+
+  // En la app nativa (Android/Capacitor) el dispositivo real ya tiene su propia barra de
+  // estado — el marco de teléfono es solo para la preview de escritorio en el navegador.
+  if (isNativeApp) {
+    return (
+      <div className="min-h-screen flex flex-col" style={{ background:"#eaf2fd" }}>
+        <ApiConfigBar />
+        <div className="flex-1 overflow-hidden flex flex-col">{children}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 pt-3"
       style={{ background:"radial-gradient(120% 80% at 50% 0%, #f0f7ff 0%, #dbe9fa 45%, #cddef5 100%)" }}>
       <ApiConfigBar />
-      <div className="w-full" style={{ maxWidth:"392px" }}>
-        <div style={{
-          background:"#eaf2fd", borderRadius:"44px", overflow:"hidden", height:"784px",
-          border:"9px solid #ffffff", position:"relative",
-          display:"flex", flexDirection:"column",
-          boxShadow:"22px 22px 55px rgba(37,99,235,.22), -16px -16px 44px rgba(255,255,255,.95), inset 0 1px 2px rgba(255,255,255,.9)",
-        }}>
-          {/* Barra de estado */}
-          <div className="flex justify-between items-center px-6 pt-3 pb-1.5 shrink-0 relative">
+      <div className={cx("device-wrap", wide && "device-wrap--wide")}>
+        <div className={cx("device-shell", wide && "device-shell--wide")}>
+          {/* Barra de estado — solo marco de teléfono; se oculta en desktop cuando wide */}
+          <div className="phone-chrome flex justify-between items-center px-6 pt-3 pb-1.5 shrink-0 relative">
             <span className="text-[12px] font-black text-ink tnum">{fmtHora(t)}</span>
             <div className="absolute left-1/2 -translate-x-1/2 top-2.5 w-[86px] h-[26px] rounded-full bg-ink" />
             <div className="flex items-center gap-1.5 text-ink-soft">
@@ -3102,9 +3598,9 @@ function PhoneFrame({ children }) {
             </div>
           </div>
 
-          <div className="flex-1 overflow-hidden flex flex-col">{children}</div>
+          <div className="device-body flex-1 overflow-hidden flex flex-col">{children}</div>
 
-          <div className="flex justify-center py-2.5 shrink-0">
+          <div className="phone-chrome flex justify-center py-2.5 shrink-0">
             <div className="w-32 h-1.5 rounded-full bg-ink/25" />
           </div>
         </div>
@@ -3119,8 +3615,13 @@ function PhoneFrame({ children }) {
 ═══════════════════════════════════════════════════════════ */
 function AppInner() {
   const { currentUser } = useApp();
+  // Admin y Dueño trabajan "mixto" (celular para un vistazo, pantalla grande
+  // para el análisis serio — ver PRODUCT.md § Users): ganan el layout ancho
+  // de escritorio/tablet. Supervisor y Login son mobile-first por diseño y
+  // se quedan siempre en el marco de teléfono, sin importar el viewport.
+  const wide = currentUser?.rol === "admin" || currentUser?.rol === "dueno";
   return (
-    <PhoneFrame>
+    <PhoneFrame wide={wide}>
       {!currentUser                     && <LoginScreen />}
       {currentUser?.rol === "supervisor"&& <SupervisorPanel />}
       {currentUser?.rol === "admin"     && <AdminPanel />}
