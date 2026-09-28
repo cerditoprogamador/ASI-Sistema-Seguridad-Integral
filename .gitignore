@@ -2,3 +2,7 @@ node_modules/
 .env
 *.log
 certs/
+
+# Artefactos de build de Capacitor/Gradle
+android/.gradle/
+android/build/
